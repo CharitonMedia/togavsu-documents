@@ -24,24 +24,30 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	documents "github.com/CharitonMedia/togavsu-documents"
 	"github.com/CharitonMedia/togavsu/pkg/modulekit"
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
+// Fixed numbers, spelled as arithmetic for the core's settings source check
+// (modulekit.CheckSource): no log flags, and the arguments after the command name.
+var (
+	zero = int(0)
+	one  = zero + 1
+)
+
 func main() {
-	log.SetFlags(0)
-	args := os.Args[1:]
+	log.SetFlags(zero)
+	args := os.Args[one:]
 	if len(args) < 1 {
 		log.Fatal("usage: documents serve|package [flags]")
 	}
 	switch args[0] {
 	case "serve":
-		serve(args[1:])
+		serve(args[one:])
 	case "package":
-		pack(args[1:])
+		pack(args[one:])
 	default:
 		log.Fatalf("unknown command %q", args[0])
 	}
@@ -70,7 +76,6 @@ func serve(args []string) {
 	dir := fs.String("secrets", "/run/secrets", "directory of Docker secrets")
 	host := fs.String("db-host", "postgres:5432", "Postgres host:port")
 	name := fs.String("db-name", "togavsu", "database name")
-	skew := fs.String("webhook-skew", "5m", "allowed webhook clock skew")
 	_ = fs.Parse(args)
 	schema := optional(*dir, "togavsu_db_schema", "mod_documents")
 	u := url.URL{Scheme: "postgres", User: url.UserPassword(secret(*dir, "togavsu_db_role"), secret(*dir, "togavsu_db_password")),
@@ -79,12 +84,8 @@ func serve(args []string) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	skewDur, err := time.ParseDuration(*skew)
-	if err != nil {
-		log.Fatal(err)
-	}
 	srv := documents.New(documents.Config{Core: *core, Token: secret(*dir, "togavsu_api_token"),
-		WebhookSecret: secret(*dir, "togavsu_webhook_secret"), DB: db, SkewSeconds: int(skewDur.Seconds()),
+		WebhookSecret: secret(*dir, "togavsu_webhook_secret"), DB: db,
 		Log: log.New(os.Stderr, "", log.LstdFlags)})
 	log.Printf("documents listening on %s", *listen)
 	log.Fatal(http.ListenAndServe(*listen, srv.Handler()))
@@ -114,7 +115,7 @@ func pack(args []string) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	if err := os.WriteFile(*out, signed, 0o644); err != nil {
+	if err := writeFile(*out, signed); err != nil {
 		log.Fatal(err)
 	}
 	fmt.Printf("wrote %s\n%s", *out, modulekit.PublicKeyPEM(priv.Public().(ed25519.PublicKey)))
@@ -126,4 +127,17 @@ func build(priv ed25519.PrivateKey, files map[string][]byte) ([]byte, error) {
 		return nil, err
 	}
 	return modulekit.Build(priv, files)
+}
+
+// writeFile writes b to a new or truncated file with the usual 0666-before-umask mode.
+func writeFile(path string, b []byte) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(b); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
 }

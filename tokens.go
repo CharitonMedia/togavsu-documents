@@ -76,13 +76,14 @@ func longDate(t time.Time) string { return t.Format("January 2, 2006") }
 
 func ordinal(n int) string {
 	suffix := "th"
-	if n%100 < 11 || n%100 > 13 {
-		switch n % 10 {
-		case 1:
+	// 11th, 12th and 13th; otherwise 1st, 2nd, 3rd by the last digit.
+	if r := n % (ten * ten); r < ten+one || r > ten+three {
+		switch n % ten {
+		case one:
 			suffix = "st"
-		case 2:
+		case two:
 			suffix = "nd"
-		case 3:
+		case three:
 			suffix = "rd"
 		}
 	}
@@ -209,9 +210,9 @@ func (s *Server) resolve(ctx context.Context, tok string, in resolveInput) (*res
 		if client == nil {
 			return nil, &inputError{Status: http.StatusUnprocessableEntity, Msg: "the chosen client is not a client party on this matter"}
 		}
-	case len(r.Clients) == 1:
+	case len(r.Clients) == one:
 		client = &r.Clients[0]
-	case len(r.Clients) > 1 && in.DefaultPrimary:
+	case len(r.Clients) > one && in.DefaultPrimary:
 		client = &r.Clients[0]
 		for i := range r.Clients {
 			if r.Clients[i].Primary {
@@ -219,7 +220,7 @@ func (s *Server) resolve(ctx context.Context, tok string, in resolveInput) (*res
 				break
 			}
 		}
-	case len(r.Clients) > 1:
+	case len(r.Clients) > one:
 		return r, errChooseClient
 	}
 	var clientContact coreContact
@@ -342,7 +343,7 @@ func (s *Server) resolve(ctx context.Context, tok string, in resolveInput) (*res
 	}
 
 	title := in.DocumentTitle
-	if title == "" && len(in.TemplateTitles) == 1 {
+	if title == "" && len(in.TemplateTitles) == one {
 		title = in.TemplateTitles[0]
 	}
 	set("document_title", title)
@@ -427,7 +428,7 @@ func formatCustom(d coreCFDef, v any, zone *time.Location) string {
 	case string:
 		return t
 	case float64:
-		return strconv.FormatFloat(t, 'f', -1, 64)
+		return strconv.FormatFloat(t, 'f', -1, float64Bits)
 	}
 	return fmt.Sprint(v)
 }

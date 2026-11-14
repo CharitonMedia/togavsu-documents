@@ -9,6 +9,9 @@ import (
 	"strings"
 )
 
+// versionNote is the label and note on one version.
+type versionNote struct{ label, note string }
+
 // Version tools on any file the viewer can see on a matter: notes and labels, compare
 // of two versions' Markdown copies, and copy of one version as a new file.
 
@@ -64,7 +67,7 @@ func (s *Server) fileVersions(ctx context.Context, v viewer, id string) (FileVer
 	if err != nil {
 		return FileVersions{}, nil, nil, err
 	}
-	notes := map[int][2]string{}
+	notes := map[int]versionNote{}
 	rows, err := s.c.DB.QueryContext(ctx, `SELECT version_number, label, note FROM version_notes WHERE file_id = $1`, id)
 	if err != nil {
 		return FileVersions{}, nil, nil, err
@@ -76,7 +79,7 @@ func (s *Server) fileVersions(ctx context.Context, v viewer, id string) (FileVer
 			rows.Close()
 			return FileVersions{}, nil, nil, err
 		}
-		notes[n] = [2]string{label, note}
+		notes[n] = versionNote{label, note}
 	}
 	rows.Close()
 	md := map[string]bool{}
@@ -89,7 +92,7 @@ func (s *Server) fileVersions(ctx context.Context, v viewer, id string) (FileVer
 	for _, ver := range vs {
 		n := notes[ver.Number]
 		out.Versions = append(out.Versions, VersionRow{ID: ver.ID, Number: ver.Number, SizeBytes: ver.SizeBytes, SHA256: ver.SHA256, How: ver.How,
-			CreatedAt: ver.CreatedAt, Quarantined: ver.Quarantined, Markdown: md[ver.ID], Label: n[0], Note: n[1]})
+			CreatedAt: ver.CreatedAt, Quarantined: ver.Quarantined, Markdown: md[ver.ID], Label: n.label, Note: n.note})
 	}
 	sort.Slice(out.Versions, func(i, j int) bool { return out.Versions[i].Number > out.Versions[j].Number })
 	return out, vs, rs, nil
@@ -191,7 +194,7 @@ func diffLines(a, b []string) []DiffLine {
 		}
 	}
 	out := []DiffLine{}
-	i, j := 0, 0
+	var i, j int
 	for i < n && j < m {
 		switch {
 		case a[i] == b[j]:

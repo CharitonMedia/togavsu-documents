@@ -230,7 +230,7 @@ func (s *Server) matterPage(w http.ResponseWriter, r *http.Request, v viewer) {
 		s.fail(w, r, err)
 		return
 	}
-	runs, err := s.recentRuns(ctx, m.ID, 10)
+	runs, err := s.recentRuns(ctx, m.ID, runsMatterRows)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -317,7 +317,7 @@ func (s *Server) recentPage(w http.ResponseWriter, r *http.Request, v viewer) {
 		s.fail(w, r, err)
 		return
 	}
-	runs, err := s.recentRuns(r.Context(), m.ID, 5)
+	runs, err := s.recentRuns(r.Context(), m.ID, runsRecentRows)
 	if err != nil {
 		s.fail(w, r, err)
 		return

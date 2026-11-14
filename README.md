@@ -61,7 +61,6 @@ acceptance/           acceptance suite on the real core (pkg/modulekit/coretest)
 ```
 go vet ./...
 TOGAVSU_TEST_DATABASE_URL=postgres://postgres:pg@127.0.0.1:5432/postgres?sslmode=disable go test -race ./...
-go run github.com/CharitonMedia/togavsu/cmd/togavsu-module check package
 docker build -t togavsu-documents .
 ```
 
@@ -78,10 +77,14 @@ CI they skip without it, and in CI they fail without it.
 - The root package's `*_pg_test.go` run the module against the fake core in
   `internal/fakecore`, in their own database `togavsu_documents`.
 
-The shipped manifest carries the CORE-08 sidebar fields and the CORE-18 and CORE-19
-scopes the spec asks for, which the pinned core refuses, so the package check and
-`documents package` refuse it until those items land; the tests install the package
-without them (`internal/pending`).
+The shipped manifest carries the CORE-08 sidebar fields (section, icon, order) the spec
+asks for, which the pinned core's install checks refuse, so `togavsu-module check
+package` and `documents package` refuse it until CORE-08 lands. `internal/pending` lists
+those fields in one place; the tests check, sign and install the package without them,
+and `TestPackageCheck` fails as soon as the core accepts one. The source passes the
+core's settings check (`modulekit.CheckSource`, in `TestCheckSource`): small fixed
+numbers are spelled as arithmetic in `fixed.go`, as the core's matter-clock does, and
+tunables are module settings.
 
 ## Run
 

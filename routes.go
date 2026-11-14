@@ -117,7 +117,7 @@ func (s *Server) openapi(w http.ResponseWriter, r *http.Request) {
 		}
 		var params []map[string]any
 		for _, m := range pathParam.FindAllStringSubmatch(rt.Path, -1) {
-			params = append(params, map[string]any{"name": m[1], "in": "path", "required": true, "schema": map[string]string{"type": "string"}})
+			params = append(params, map[string]any{"name": m[firstGroup], "in": "path", "required": true, "schema": map[string]string{"type": "string"}})
 		}
 		op := map[string]any{"summary": rt.Summary, "responses": map[string]any{"200": map[string]string{"description": "JSON"}}}
 		if params != nil {

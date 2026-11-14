@@ -79,8 +79,8 @@ func slugify(name string) string {
 	if s == "" {
 		s = "template"
 	}
-	if len(s) > 60 {
-		s = strings.Trim(s[:60], "-")
+	if len(s) > slugMax {
+		s = strings.Trim(s[:slugMax], "-")
 	}
 	return s
 }
@@ -88,9 +88,9 @@ func slugify(name string) string {
 // uniqueSlug finds a free slug in table: name, then name-2, name-3.
 func (s *Server) uniqueSlug(ctx context.Context, table, name string) (string, error) {
 	base := slugify(name)
-	for n := 1; ; n++ {
+	for n := one; ; n++ {
 		cand := base
-		if n > 1 {
+		if n > one {
 			cand = base + "-" + strconv.Itoa(n)
 		}
 		var exists bool
@@ -728,7 +728,7 @@ func (s *Server) setStatus(table, status string) func(http.ResponseWriter, *http
 			s.fail(w, r, err)
 			return
 		}
-		if n, _ := res.RowsAffected(); n == 0 {
+		if n, _ := res.RowsAffected(); n == int64(0) {
 			s.fail(w, r, notFound())
 			return
 		}

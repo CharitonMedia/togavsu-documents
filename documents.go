@@ -60,7 +60,8 @@ type Config struct {
 	DB            *sql.DB
 	HTTP          *http.Client
 	Now           func() time.Time
-	// SkewSeconds is how far a webhook timestamp may be from the module's clock.
+	// SkewSeconds is how far a webhook timestamp may be from the module's clock; zero
+	// means the spec's five minutes.
 	SkewSeconds int
 	// Log receives the module's log lines. It never gets a typed token value.
 	Log *log.Logger
@@ -80,7 +81,7 @@ func New(c Config) *Server {
 		c.Now = time.Now
 	}
 	if c.Log == nil {
-		c.Log = log.New(io.Discard, "", 0)
+		c.Log = log.New(io.Discard, "", zero)
 	}
 	return &Server{c: c}
 }

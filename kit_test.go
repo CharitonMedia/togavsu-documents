@@ -2,6 +2,8 @@ package documents
 
 import (
 	"crypto/ed25519"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -31,31 +33,49 @@ func files(t *testing.T) map[string][]byte {
 	return f
 }
 
+// installable is the shipped package without the pending fields: what the pinned core
+// installs today.
 func installable(t *testing.T) map[string][]byte {
 	t.Helper()
-	f := files(t)
-	if _, _, err := modulekit.Check(f); err == nil {
-		return f
-	}
-	return pending.Strip(f)
+	return pending.Strip(files(t))
 }
 
-// The package passes the core's own install checks (MOD-DOC-01's package half).
+// The package passes the core's own install checks once the pending fields are out
+// (MOD-DOC-01's package half), and the shipped manifest is refused for those fields and
+// nothing else: each field the checks refuse is refused alone, each scope refused only
+// at approval passes them, and no field matches twice. When the core accepts a field
+// this fails and names it, and the field leaves internal/pending.
 func TestPackageCheck(t *testing.T) {
 	f := files(t)
-	pkg, ms, err := modulekit.Check(f)
+	pkg, ms, err := modulekit.Check(installable(t))
 	if err != nil {
-		if _, _, perr := modulekit.Check(pending.Strip(f)); perr != nil {
-			t.Fatalf("check: %v; without the pending fields: %v", err, perr)
-		}
-		t.Skipf("%s: %v", pending.Items, err)
+		t.Fatalf("check without the pending fields: %v", err)
 	}
 	if pkg.Manifest.ID != ID || pkg.Manifest.Version != Version || len(ms) != 6 {
 		t.Fatalf("checked %s %s with %d migrations", pkg.Manifest.ID, pkg.Manifest.Version, len(ms))
 	}
+	if _, _, err := modulekit.Check(f); err == nil {
+		t.Errorf("the core accepts the shipped manifest: every field in internal/pending has landed; empty pending.Fields")
+	}
+	for i := range pending.Fields {
+		p := &pending.Fields[i]
+		if n := len(p.Lines.FindAllString(string(f[pending.ManifestFile]), -1)); n != 1 {
+			t.Errorf("%s (%s) matches %d places in the shipped manifest, want 1", p.Name, p.Item, n)
+			continue
+		}
+		_, _, err := modulekit.Check(pending.StripBut(f, p))
+		switch {
+		case p.Refused == pending.AtCheck && err == nil:
+			t.Errorf("the core now accepts the %s (%s): ship it and delete its row in internal/pending", p.Name, p.Item)
+		case p.Refused == pending.AtCheck:
+			t.Logf("%s (%s) refused: %v", p.Name, p.Item, err)
+		case err != nil:
+			t.Errorf("the %s (%s) is listed as refused at approval, but the install checks refuse it: %v", p.Name, p.Item, err)
+		}
+	}
 }
 
-// Everything but the pending fields passes today, archived and signed: Check,
+// The installable package archived and signed: Check,
 // CheckPackage on the installable tar, and VerifyFile on the signed file with a
 // throwaway key. A tampered package or an untrusted signer is refused.
 func TestBuildSignVerify(t *testing.T) {
@@ -97,5 +117,21 @@ func TestBuildSignVerify(t *testing.T) {
 	}
 	if !strings.Contains(modulekit.PublicKeyPEM(pub), "PUBLIC KEY") {
 		t.Fatal("no PEM public key")
+	}
+}
+
+// The module's Go source passes the core's settings source check (AC-030): no
+// environment reads and no numeric configuration literal outside a setting.
+func TestCheckSource(t *testing.T) {
+	if err := modulekit.CheckSource("."); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	src := "package m\n\nimport \"os\"\n\nfunc f() string { return os.Getenv(\"X\") }\n"
+	if err := os.WriteFile(filepath.Join(dir, "m.go"), []byte(src), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if modulekit.CheckSource(dir) == nil {
+		t.Fatal("the check passed an environment read")
 	}
 }

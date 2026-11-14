@@ -36,6 +36,7 @@ type kit struct {
 	logs   *syncBuffer
 	api    map[string]any
 	signed []byte
+	priv   ed25519.PrivateKey
 }
 
 type syncBuffer struct {
@@ -74,6 +75,7 @@ func newKit(t *testing.T) *kit {
 	if err != nil {
 		t.Fatal(err)
 	}
+	k.priv = priv
 	k.signed, err = modulekit.Build(priv, installable(t))
 	if err != nil {
 		t.Fatal(err)
@@ -148,18 +150,13 @@ func (k *kit) needs(items ...string) {
 
 func (k *kit) landed(item string) bool {
 	switch item {
-	case "CORE-08", "CORE-18", "CORE-19":
+	case "CORE-08":
 		_, _, err := modulekit.Check(shipped(k.t))
-		if err != nil {
-			return false
-		}
-		switch item {
-		case "CORE-18":
-			return k.has("GET", "/api/v1/firm-profile")
-		case "CORE-19":
-			return k.has("GET", "/api/v1/user-directory")
-		}
-		return true
+		return err == nil
+	case "CORE-18":
+		return k.has("GET", "/api/v1/firm-profile")
+	case "CORE-19":
+		return k.has("GET", "/api/v1/user-directory")
 	case "CORE-17":
 		return k.field("POST", "/api/v1/file-uploads", "library")
 	case "CORE-20":
@@ -192,15 +189,10 @@ func shipped(t *testing.T) map[string][]byte {
 	return f
 }
 
-// installable is the shipped package, or, while the core refuses its pending fields,
-// the package without them (internal/pending).
+// installable is the shipped package without the fields internal/pending lists.
 func installable(t *testing.T) map[string][]byte {
 	t.Helper()
-	f := shipped(t)
-	if _, _, err := modulekit.Check(f); err == nil {
-		return f
-	}
-	return pending.Strip(f)
+	return pending.Strip(shipped(t))
 }
 
 // --- Calling the module as a viewer, through the core's /m/ route ---

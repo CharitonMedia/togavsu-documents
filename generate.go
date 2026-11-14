@@ -230,7 +230,7 @@ func (s *Server) assembly(ctx context.Context, v viewer, matterID string, in gen
 	}
 	a.Parties = res.Parties
 	a.ClientContactID = res.ClientID
-	a.NeedsClientChoice = len(res.Clients) > 1
+	a.NeedsClientChoice = len(res.Clients) > one
 	rows := map[string]*TokenRow{}
 	var order []string
 	for _, p := range items {
@@ -244,7 +244,7 @@ func (s *Server) assembly(ctx context.Context, v viewer, matterID string, in gen
 					if row.Source == "" {
 						row.Source = srcCustom
 					}
-					if n == "document_title" && in.DocumentTitle == "" && len(items) > 1 {
+					if n == "document_title" && in.DocumentTitle == "" && len(items) > one {
 						row.Value = "(each template's name)"
 					}
 				} else {
@@ -329,7 +329,7 @@ func (s *Server) generateAPI(w http.ResponseWriter, r *http.Request, v viewer) {
 		if run != nil {
 			status, body := statusOf(err)
 			body["run_id"] = run.ID
-			if ret := wantsPage(r); ret != "" || status >= 500 {
+			if ret := wantsPage(r); ret != "" || status >= http.StatusInternalServerError {
 				s.fail(w, r, err)
 				return
 			}
@@ -363,7 +363,7 @@ func (s *Server) generate(ctx context.Context, v viewer, matterID string, in gen
 			values[row.Name] = res.Values[row.Name].Value
 			continue
 		}
-		if row.Name == "document_title" && strings.TrimSpace(in.DocumentTitle) == "" && len(items) > 1 {
+		if row.Name == "document_title" && strings.TrimSpace(in.DocumentTitle) == "" && len(items) > one {
 			continue // each template's own name
 		}
 		if row.Name == "document_title" && !row.NeedsInput {
@@ -496,7 +496,7 @@ VALUES ($1, $2, $3, $4, $5, 'draft', $6)`, f.ID, run.ID, outs[i].p.T.ID, outs[i]
 	if run.PackageID != "" {
 		p, _ := s.pkg(ctx, run.PackageID)
 		noun := "documents"
-		if run.FileCount == 1 {
+		if run.FileCount == one {
 			noun = "document"
 		}
 		summary = "Generated " + strconv.Itoa(run.FileCount) + " " + noun + " from package " + p.Name
@@ -725,7 +725,7 @@ func (s *Server) runsAPI(w http.ResponseWriter, r *http.Request, v viewer) {
 		s.fail(w, r, err)
 		return
 	}
-	runs, err := s.recentRuns(r.Context(), r.PathValue("matter_id"), 50)
+	runs, err := s.recentRuns(r.Context(), r.PathValue("matter_id"), runsAPIRows)
 	if err != nil {
 		s.fail(w, r, err)
 		return

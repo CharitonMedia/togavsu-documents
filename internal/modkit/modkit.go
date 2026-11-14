@@ -43,8 +43,9 @@ func SignWebhook(secret string, at time.Time, body []byte) string {
 	return "t=" + t + ",v1=" + hex.EncodeToString(mac.Sum(nil))
 }
 
-// VerifyWebhook checks a signature header against body within tolerance of now.
-func VerifyWebhook(secret, header string, body []byte, now time.Time, tolerance time.Duration) error {
+// VerifyWebhook checks a signature header against body, with its timestamp within
+// toleranceSeconds of now.
+func VerifyWebhook(secret, header string, body []byte, now time.Time, toleranceSeconds int64) error {
 	var t, v1 string
 	for _, part := range strings.Split(header, ",") {
 		k, v, _ := strings.Cut(strings.TrimSpace(part), "=")
@@ -59,7 +60,7 @@ func VerifyWebhook(secret, header string, body []byte, now time.Time, tolerance 
 	if err != nil || v1 == "" || secret == "" {
 		return errors.New("malformed webhook signature")
 	}
-	if d := now.Sub(time.Unix(sec, 0)); d > tolerance || d < -tolerance {
+	if d := now.Unix() - sec; d > toleranceSeconds || d < -toleranceSeconds {
 		return errors.New("webhook signature is outside the allowed clock skew")
 	}
 	want := SignWebhook(secret, time.Unix(sec, 0), body)

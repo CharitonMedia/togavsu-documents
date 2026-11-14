@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	documents "github.com/CharitonMedia/togavsu-documents"
+	"github.com/CharitonMedia/togavsu-documents/internal/pending"
 	"github.com/CharitonMedia/togavsu/pkg/modulekit"
 	"github.com/CharitonMedia/togavsu/pkg/modulekit/coretest"
 )
@@ -114,14 +115,45 @@ func TestMODDOC01Install(t *testing.T) {
 		}
 	})
 
-	// All eleven scopes, firm:read and users:directory among them, install once the
-	// core knows them.
-	k.needs("CORE-18", "CORE-19")
-	if len(m.Permissions) != 11 {
-		t.Fatalf("%d scopes", len(m.Permissions))
+	// Each scope internal/pending holds back is refused at approval until its CORE
+	// item lands; then this fails and names it.
+	for i := range pending.Fields {
+		p := &pending.Fields[i]
+		if p.Refused != pending.AtApproval {
+			continue
+		}
+		t.Run(p.Name+" refused at approval", func(t *testing.T) {
+			k := newKit(t)
+			signed, err := modulekit.Build(k.priv, pending.StripBut(shipped(t), p))
+			if err != nil {
+				t.Fatal(err)
+			}
+			k.Install(signed)
+			if r := k.decide(); r.Code == http.StatusOK {
+				t.Errorf("the core now accepts the %s (%s): delete its row in internal/pending", p.Name, p.Item)
+			} else {
+				t.Logf("%s (%s): %d %s", p.Name, p.Item, r.Code, strings.TrimSpace(r.Body))
+			}
+		})
 	}
+
+	// The rest needs what the pinned core lacks: every gap is named in one skip.
+	var gaps []string
 	if len(noReason) > 0 {
-		t.Skipf("needs a core change no CORE item names: the Modules tab shows no reason for %s", strings.Join(noReason, ", "))
+		gaps = append(gaps, "needs a CORE item for permission reasons (not in CORE-CHANGES): the Modules tab shows no reason for "+strings.Join(noReason, ", "))
+	}
+	for _, item := range []string{"CORE-18", "CORE-19"} {
+		if !k.landed(item) {
+			gaps = append(gaps, "needs "+item)
+		}
+	}
+	if len(gaps) > 0 {
+		t.Skip(strings.Join(gaps, "; "))
+	}
+	// All eleven scopes, firm:read and users:directory among them, are in the shipped
+	// manifest, which installs once the core knows them.
+	if m, err = modulekit.ParseManifest(shipped(t)[modulekit.ManifestFile]); err != nil || len(m.Permissions) != 11 {
+		t.Fatalf("%d scopes: %v", len(m.Permissions), err)
 	}
 }
 

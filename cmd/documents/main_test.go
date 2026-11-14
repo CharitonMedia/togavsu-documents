@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	documents "github.com/CharitonMedia/togavsu-documents"
+	"github.com/CharitonMedia/togavsu-documents/internal/pending"
 	"github.com/CharitonMedia/togavsu/pkg/modulekit"
 )
 
@@ -21,12 +22,12 @@ func TestBuild(t *testing.T) {
 	if _, err := build(priv, map[string][]byte{"togavsu-module.yaml": []byte("id: documents\n")}); err == nil {
 		t.Fatal("an incomplete manifest was signed")
 	}
-	signed, err := build(priv, files)
+	if _, err := build(priv, files); err == nil {
+		t.Fatalf("the shipped manifest signed, so the core now accepts every pending field; empty pending.Fields")
+	}
+	signed, err := build(priv, pending.Strip(files))
 	if err != nil {
-		if _, _, cerr := modulekit.Check(files); cerr != nil {
-			t.Skipf("needs CORE-08, CORE-18 and CORE-19 before the shipped manifest installs: %v", err)
-		}
-		t.Fatal(err)
+		t.Fatalf("%s; without them: %v", pending.Items(), err)
 	}
 	if _, _, err := modulekit.VerifyFile(signed, []modulekit.TrustedKey{modulekit.Trust(pub)}); err != nil {
 		t.Fatal(err)

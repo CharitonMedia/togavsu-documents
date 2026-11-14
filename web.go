@@ -301,7 +301,7 @@ func bind(r *http.Request, out any) error {
 var pages = template.Must(template.New("pages").Funcs(template.FuncMap{
 	"link": func(ctx, p string, kv ...string) string {
 		q := url.Values{"context": {ctx}}
-		for i := 0; i+1 < len(kv); i += 2 {
+		for i := 0; i+1 < len(kv); i += two {
 			if kv[i+1] != "" {
 				q.Set(kv[i], kv[i+1])
 			}

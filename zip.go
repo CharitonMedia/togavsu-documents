@@ -105,7 +105,7 @@ func cleanSegment(s string) string {
 // splitName splits "Motion.docx" into "Motion" and ".docx".
 func splitName(name string) (string, string) {
 	i := strings.LastIndex(name, ".")
-	if i <= 0 {
+	if i < one {
 		return name, ""
 	}
 	return name[:i], name[i:]
@@ -113,7 +113,7 @@ func splitName(name string) (string, string) {
 
 // truncate keeps a path within 255 bytes, cutting the base and keeping the extension.
 func truncate(dir, base, ext string) string {
-	limit := 255 - len(ext)
+	limit := zipPathMax - len(ext)
 	if dir != "" {
 		limit -= len(dir) + 1
 	}
@@ -129,7 +129,7 @@ func truncate(dir, base, ext string) string {
 
 // validPath reports whether a path meets the CC-5 rules.
 func validPath(p string) bool {
-	if p == "" || len(p) > 255 || strings.HasPrefix(p, "/") || strings.Contains(p, "\\") {
+	if p == "" || len(p) > zipPathMax || strings.HasPrefix(p, "/") || strings.Contains(p, "\\") {
 		return false
 	}
 	for _, seg := range strings.Split(p, "/") {
@@ -151,7 +151,7 @@ type pathSet map[string]bool
 
 func (ps pathSet) add(dir, base, ext string) string {
 	p := truncate(dir, base, ext)
-	for n := 2; ps[strings.ToLower(p)]; n++ {
+	for n := two; ps[strings.ToLower(p)]; n++ {
 		p = truncate(dir, base+"-"+strconv.Itoa(n), ext)
 	}
 	ps[strings.ToLower(p)] = true
@@ -397,13 +397,13 @@ func (s *Server) zipDownload(w http.ResponseWriter, r *http.Request, v viewer) {
 	}
 	body, _ := json.Marshal(map[string]any{"entries": sel, "confirm_quarantine": in.Quarantine == "include"})
 	resp, err := s.request(ctx, http.MethodPost, "/api/v1/file-archives", v.Token, map[string]string{"Content-Type": "application/json"}, strings.NewReader(string(body)))
-	if err == nil && resp.StatusCode/100 != 2 {
+	if err == nil && !success(resp.StatusCode) {
 		err = readProblem(resp, "/api/v1/file-archives")
 		resp.Body.Close()
 		resp = nil
 	}
 	if err != nil {
-		s.finishBulk(context.WithoutCancel(ctx), bulkID, "interrupted", 0)
+		s.finishBulk(context.WithoutCancel(ctx), bulkID, "interrupted", int64(0))
 		s.fail(w, r, err)
 		return
 	}
@@ -423,7 +423,7 @@ func (s *Server) zipDownload(w http.ResponseWriter, r *http.Request, v viewer) {
 	}
 	s.finishBulk(bg, bulkID, "complete", n)
 	noun := "files"
-	if len(files) == 1 {
+	if len(files) == one {
 		noun = "file"
 	}
 	if err := s.writeEvent(bg, v.Token, "documents.bulk_downloaded", m.ID, "Downloaded "+strconv.Itoa(len(files))+" "+noun+" as one zip"); err != nil {
