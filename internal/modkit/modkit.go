@@ -1,10 +1,8 @@
 // Package modkit holds the module's side of the core's wire protocol: the context token
 // header and the webhook signature format the core sends (HMAC-SHA256 of "<t>.<body>").
 //
-// Packaging and signing are deliberately not here. The core verifies packages with its
-// own internal code, which a standalone module can't import, and a copy would drift from
-// what the core checks. They go through the Packager adapter in the root package until
-// the core publishes a public packaging and signing package or CLI.
+// Packaging and signing are not here: cmd/documents uses the core's public kit,
+// pkg/modulekit, so the package is checked and signed exactly as the core verifies it.
 package modkit
 
 import (

@@ -36,7 +36,7 @@ Every action is a JSON endpoint under `/m/documents/api/`, listed in
 
 ```
 cmd/documents/        serve and package subcommands
-documents.go          ID, embedded package files, Packager adapter, Config, Handler
+documents.go          ID, embedded package files, Config, Handler
 api.go                core API client
 docx.go               DOCX read, token fill, slot copy, part checks, blank DOCX
 tokens.go             vocabulary and resolver
@@ -52,20 +52,36 @@ pages/                html/template pages, one stylesheet, one script
 package/              togavsu-module.yaml and migrations 0001 to 0006
 internal/fakecore/    in-memory core for tests
 internal/modkit/      context and webhook headers, webhook signatures
+internal/pending/     the manifest the pinned core installs today (tests only)
+acceptance/           acceptance suite on the real core (pkg/modulekit/coretest)
 ```
 
 ## Build and test
 
 ```
 go vet ./...
-TOGAVSU_TEST_DATABASE_URL=postgres://postgres:pg@127.0.0.1:5432/postgres?sslmode=disable go test ./...
+TOGAVSU_TEST_DATABASE_URL=postgres://postgres:pg@127.0.0.1:5432/postgres?sslmode=disable go test -race ./...
+go run github.com/CharitonMedia/togavsu/cmd/togavsu-module check package
 docker build -t togavsu-documents .
 ```
 
-The Postgres tests create and use their own database, `togavsu_documents`, with a
-skeleton `core` schema beside `mod_documents`, and run the module against the fake core
-in `internal/fakecore`. Without `TOGAVSU_TEST_DATABASE_URL` they skip; the unit tests
-still run.
+`go.mod` pins the core for the public module kit and adds no dependency the core
+doesn't pin. Two Postgres suites run on a superuser `TOGAVSU_TEST_DATABASE_URL`; outside
+CI they skip without it, and in CI they fail without it.
+
+- `acceptance/` installs the signed package on the real composed core
+  (`pkg/modulekit/coretest`), approves it, serves the module in process with the
+  deployment's token, webhook secret and database login, and drives every MOD-DOC
+  criterion. A criterion that needs a CORE item the pinned core lacks runs what it can
+  and skips naming the item; the skip is decided by asking the running core, so it lifts
+  when the pin moves to a core that has the item.
+- The root package's `*_pg_test.go` run the module against the fake core in
+  `internal/fakecore`, in their own database `togavsu_documents`.
+
+The shipped manifest carries the CORE-08 sidebar fields and the CORE-18 and CORE-19
+scopes the spec asks for, which the pinned core refuses, so the package check and
+`documents package` refuse it until those items land; the tests install the package
+without them (`internal/pending`).
 
 ## Run
 
@@ -79,12 +95,11 @@ Secrets come from the Docker secrets the core hands the supervisor: `togavsu_api
 
 ## Package and sign
 
-`documents package -key <file> -out documents.signed.json` goes through the `Packager`
-adapter in `documents.go`. The core verifies packages with its own internal code, which
-a separate repository can't import and shouldn't copy, so the default adapter is a stub
-that refuses until the core publishes a public packaging and signing package or CLI.
-Wire that in as `documents.DefaultPackager` when it exists, and set the image digest in
-`package/togavsu-module.yaml` (a placeholder today).
+`documents package -key <file> -out documents.signed.json` runs the core's install
+checks through `pkg/modulekit`, archives the package, signs it with the base64 Ed25519
+seed in the key file and prints the PEM public key the admin trusts. It never makes or
+keeps a key. The image digest in `package/togavsu-module.yaml` is a placeholder the
+release workflow pins.
 
 ## License
 
