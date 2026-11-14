@@ -1,10 +1,8 @@
 // Package modkit holds the module's side of the core's wire protocol: the context token
 // header and the webhook signature format the core sends (HMAC-SHA256 of "<t>.<body>").
 //
-// Packaging and signing are deliberately not here. The core verifies packages with its
-// own internal code, which a standalone module can't import, and a copy would drift from
-// what the core checks. They go through the Packager adapter in the root package until
-// the core publishes a public packaging and signing package or CLI.
+// Packaging and signing are not here: cmd/documents uses the core's public kit,
+// pkg/modulekit, so the package is checked and signed exactly as the core verifies it.
 package modkit
 
 import (
@@ -45,8 +43,9 @@ func SignWebhook(secret string, at time.Time, body []byte) string {
 	return "t=" + t + ",v1=" + hex.EncodeToString(mac.Sum(nil))
 }
 
-// VerifyWebhook checks a signature header against body within tolerance of now.
-func VerifyWebhook(secret, header string, body []byte, now time.Time, tolerance time.Duration) error {
+// VerifyWebhook checks a signature header against body, with its timestamp within
+// toleranceSeconds of now.
+func VerifyWebhook(secret, header string, body []byte, now time.Time, toleranceSeconds int64) error {
 	var t, v1 string
 	for _, part := range strings.Split(header, ",") {
 		k, v, _ := strings.Cut(strings.TrimSpace(part), "=")
@@ -61,7 +60,7 @@ func VerifyWebhook(secret, header string, body []byte, now time.Time, tolerance 
 	if err != nil || v1 == "" || secret == "" {
 		return errors.New("malformed webhook signature")
 	}
-	if d := now.Sub(time.Unix(sec, 0)); d > tolerance || d < -tolerance {
+	if d := now.Unix() - sec; d > toleranceSeconds || d < -toleranceSeconds {
 		return errors.New("webhook signature is outside the allowed clock skew")
 	}
 	want := SignWebhook(secret, time.Unix(sec, 0), body)

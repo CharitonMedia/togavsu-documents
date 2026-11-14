@@ -70,6 +70,9 @@ type env struct {
 func testURL(t *testing.T) string {
 	u := os.Getenv("TOGAVSU_TEST_DATABASE_URL")
 	if u == "" {
+		if os.Getenv("CI") != "" {
+			t.Fatal("TOGAVSU_TEST_DATABASE_URL is required in CI")
+		}
 		t.Skip("TOGAVSU_TEST_DATABASE_URL is not set")
 	}
 	return u

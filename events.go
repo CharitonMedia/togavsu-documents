@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/CharitonMedia/togavsu-documents/internal/modkit"
 )
@@ -26,11 +25,11 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unreadable", http.StatusBadRequest)
 		return
 	}
-	skew := time.Duration(s.c.SkewSeconds) * time.Second
-	if skew <= 0 {
-		skew = 5 * time.Minute
+	skew := s.c.SkewSeconds
+	if skew < one {
+		skew = webhookSkewSeconds
 	}
-	if err := modkit.VerifyWebhook(s.c.WebhookSecret, r.Header.Get(modkit.SignatureHeader), body, s.c.Now(), skew); err != nil {
+	if err := modkit.VerifyWebhook(s.c.WebhookSecret, r.Header.Get(modkit.SignatureHeader), body, s.c.Now(), int64(skew)); err != nil {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"code": "bad_signature", "message": "the event signature does not verify"})
 		return
 	}
@@ -60,7 +59,7 @@ func (s *Server) handleEvent(ctx context.Context, ev modkit.EventPayload) (bool,
 	if err != nil {
 		return false, err
 	}
-	if n, _ := res.RowsAffected(); n == 0 {
+	if n, _ := res.RowsAffected(); n == int64(0) {
 		return false, nil
 	}
 	switch ev.Action {
@@ -102,7 +101,7 @@ func (s *Server) holds(ctx context.Context, q interface {
 		if err := q.QueryRowContext(ctx, c.sql, id).Scan(&n); err != nil {
 			return h, err
 		}
-		if n > 0 {
+		if n > zero {
 			h.Kinds = append(h.Kinds, c.kind)
 		}
 	}

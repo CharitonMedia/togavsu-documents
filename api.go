@@ -3,9 +3,7 @@ package documents
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
-	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -57,22 +55,10 @@ func readProblem(resp *http.Response, path string) error {
 	return &coreError{Status: resp.StatusCode, Code: p.Code, Detail: p.Detail, Path: path}
 }
 
-// newID returns a UUIDv7, the core's id form.
-func newID(ms int64) string {
-	var b [16]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		panic(err)
-	}
-	var ts [8]byte
-	binary.BigEndian.PutUint64(ts[:], uint64(ms))
-	copy(b[:6], ts[2:])
-	b[6] = (b[6] & 0x0f) | 0x70
-	b[8] = (b[8] & 0x3f) | 0x80
-	h := hex.EncodeToString(b[:])
-	return h[0:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:32]
-}
+func (s *Server) id() string { return modkit.NewID(s.c.Now().UnixMilli()) }
 
-func (s *Server) id() string { return newID(s.c.Now().UnixMilli()) }
+// success reports a 2xx status.
+func success(code int) bool { return code >= http.StatusOK && code < http.StatusMultipleChoices }
 
 // request sends one call to the core and returns the open response on success.
 func (s *Server) request(ctx context.Context, method, path, tok string, hdr map[string]string, body io.Reader) (*http.Response, error) {
@@ -94,7 +80,7 @@ func (s *Server) request(ctx context.Context, method, path, tok string, hdr map[
 	if err != nil {
 		return nil, err
 	}
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+	if !success(resp.StatusCode) {
 		defer resp.Body.Close()
 		return nil, readProblem(resp, path)
 	}
@@ -385,10 +371,10 @@ func (s *Server) stageUpload(ctx context.Context, tok, name, mediaType, matterID
 		return "", err
 	}
 	chunk := up.ChunkBytes
-	if chunk <= 0 {
+	if chunk < one {
 		chunk = len(data)
 	}
-	for off := 0; off < len(data) || (off == 0 && len(data) == 0); off += chunk {
+	for off := 0; off < len(data) || (off == zero && len(data) == 0); off += chunk {
 		end := min(off+chunk, len(data))
 		hdr := map[string]string{"Content-Type": "application/octet-stream",
 			"Content-Range": "bytes " + strconv.Itoa(off) + "-" + strconv.Itoa(end-1) + "/" + strconv.Itoa(len(data))}

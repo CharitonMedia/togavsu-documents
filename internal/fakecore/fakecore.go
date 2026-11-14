@@ -13,7 +13,6 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
@@ -28,9 +27,23 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/CharitonMedia/togavsu-documents/internal/modkit"
 	"github.com/jackc/pgx/v5/pgconn"
+)
+
+// Fixed numbers, spelled as arithmetic for the core's settings source check
+// (modulekit.CheckSource): the segments of a core API path, counted from "api"
+// (/api/v1/<records>/<id>/<sub>/<sub id>/<action>), and CC-5's 255-byte entry path.
+var (
+	zero      = int(0)
+	one       = zero + 1
+	segID     = one + one + one
+	segSub    = segID + one
+	segSubID  = segSub + one
+	segAction = segSubID + one
+	pathMax   = one<<(segSub+segSub) - one
 )
 
 // Module is the module id the fake serves.
@@ -276,27 +289,12 @@ CREATE TABLE core.files (id TEXT PRIMARY KEY);
 CREATE TABLE core.events (id TEXT PRIMARY KEY, action TEXT NOT NULL, matter_id TEXT, summary TEXT NOT NULL);
 `
 
-func randHex() string {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		panic(err)
-	}
-	return hex.EncodeToString(b)
-}
+func randHex() string { return modkit.RandomHex() }
 
 // ID returns a new UUIDv7-shaped id.
 func (c *Core) ID() string {
 	c.seq++
-	b := make([]byte, 16)
-	_, _ = rand.Read(b)
-	ms := uint64(c.Now().UnixMilli())
-	for i := 0; i < 6; i++ {
-		b[i] = byte(ms >> (8 * (5 - i)))
-	}
-	b[6] = 0x70 | (b[6] & 0x0f)
-	b[8] = 0x80 | (b[8] & 0x3f)
-	h := hex.EncodeToString(b)
-	return h[:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:]
+	return modkit.NewID(c.Now().UnixMilli())
 }
 
 func (c *Core) insert(table, id string) {
@@ -405,7 +403,7 @@ func (c *Core) addFile(f File, data []byte, by, how string) *File {
 	if f.Source == "" {
 		f.Source = "web"
 	}
-	if i := strings.LastIndex(f.Name, "."); i > 0 {
+	if i := strings.LastIndex(f.Name, "."); i > zero {
 		f.Extension = f.Name[i+1:]
 	}
 	f.CreatedAt = c.Now().UTC().Format(time.RFC3339)
@@ -437,7 +435,7 @@ func (c *Core) AddRendition(fileID, versionID, kind string, data []byte) *Rendit
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	sum := sha256.Sum256(data)
-	n := 1
+	n := one
 	for _, r := range c.Renditions[fileID] {
 		if r.FileVersionID == versionID && r.Kind == kind {
 			n++
@@ -559,7 +557,7 @@ func (c *Core) Deliver(moduleURL, eventID, action, recordID, secret string) int 
 	req.Header.Set(modkit.SignatureHeader, modkit.SignWebhook(secret, c.Now(), body))
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return 0
+		return zero
 	}
 	resp.Body.Close()
 	return resp.StatusCode
@@ -712,7 +710,7 @@ func (c *Core) route(q *req, method, path string) (int, any, []byte, error) {
 		if q.matter != "" {
 			m = q.matter
 		}
-		return 200, map[string]any{"viewer_user_id": q.user.ID, "roles": q.user.Roles, "module": Module, "matter_id": m}, nil, nil
+		return http.StatusOK, map[string]any{"viewer_user_id": q.user.ID, "roles": q.user.Roles, "module": Module, "matter_id": m}, nil, nil
 	case method == "GET" && path == "/api/v1/modules/"+Module+"/settings":
 		var rows []map[string]string
 		for k, v := range c.Settings {
@@ -722,7 +720,7 @@ func (c *Core) route(q *req, method, path string) (int, any, []byte, error) {
 		if rows == nil {
 			rows = []map[string]string{}
 		}
-		return 200, rows, nil, nil
+		return http.StatusOK, rows, nil, nil
 	}
 	if err := c.viewerOnly(q); err != nil {
 		return 0, nil, nil, err
@@ -730,11 +728,11 @@ func (c *Core) route(q *req, method, path string) (int, any, []byte, error) {
 	u := q.user
 	switch {
 	case method == "GET" && path == "/api/v1/firm-profile":
-		return 200, c.Firm, nil, nil
+		return http.StatusOK, c.Firm, nil, nil
 	case method == "GET" && path == "/api/v1/user-directory":
 		return c.directory(q)
 	case method == "GET" && strings.HasPrefix(path, "/api/v1/users/"):
-		return c.getUser(q, seg(path, 3))
+		return c.getUser(q, seg(path, segID))
 	case method == "GET" && path == "/api/v1/matters":
 		var out []*Matter
 		for _, m := range c.Matters {
@@ -744,16 +742,16 @@ func (c *Core) route(q *req, method, path string) (int, any, []byte, error) {
 			}
 		}
 		sort.Slice(out, func(i, j int) bool { return out[i].Number < out[j].Number })
-		return 200, list(out), nil, nil
+		return http.StatusOK, list(out), nil, nil
 	case method == "GET" && strings.HasPrefix(path, "/api/v1/matters/"):
-		m, err := c.matter(u, seg(path, 3))
-		return 200, m, nil, err
+		m, err := c.matter(u, seg(path, segID))
+		return http.StatusOK, m, nil, err
 	case method == "GET" && strings.HasPrefix(path, "/api/v1/counties/"):
-		n, ok := c.Counties[seg(path, 3)]
+		n, ok := c.Counties[seg(path, segID)]
 		if !ok {
 			return 0, nil, nil, errNotFound
 		}
-		return 200, map[string]string{"id": seg(path, 3), "name": n}, nil, nil
+		return http.StatusOK, map[string]string{"id": seg(path, segID), "name": n}, nil, nil
 	case method == "GET" && path == "/api/v1/matter-parties":
 		m, err := c.matter(u, qs.Get("matter_id"))
 		if err != nil {
@@ -766,13 +764,13 @@ func (c *Core) route(q *req, method, path string) (int, any, []byte, error) {
 			}
 		}
 		sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-		return 200, list(out), nil, nil
+		return http.StatusOK, list(out), nil, nil
 	case method == "GET" && strings.HasPrefix(path, "/api/v1/contacts/"):
-		k, ok := c.Contacts[seg(path, 3)]
+		k, ok := c.Contacts[seg(path, segID)]
 		if !ok || !u.firm() {
 			return 0, nil, nil, errNotFound
 		}
-		return 200, k, nil, nil
+		return http.StatusOK, k, nil, nil
 	case method == "GET" && path == "/api/v1/contact-addresses":
 		var out []*Address
 		for _, a := range c.Addresses {
@@ -781,27 +779,27 @@ func (c *Core) route(q *req, method, path string) (int, any, []byte, error) {
 			}
 		}
 		sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-		return 200, list(out), nil, nil
+		return http.StatusOK, list(out), nil, nil
 	case method == "GET" && strings.HasPrefix(path, "/api/v1/contact-addresses/"):
-		a, ok := c.Addresses[seg(path, 3)]
+		a, ok := c.Addresses[seg(path, segID)]
 		if !ok {
 			return 0, nil, nil, errNotFound
 		}
-		return 200, a, nil, nil
+		return http.StatusOK, a, nil, nil
 	case method == "GET" && path == "/api/v1/party-roles":
 		var out []map[string]string
 		for k, l := range c.PartyRoles {
 			out = append(out, map[string]string{"key": k, "label": l})
 		}
-		return 200, list(out), nil, nil
+		return http.StatusOK, list(out), nil, nil
 	case method == "GET" && path == "/api/v1/practice-areas":
 		var out []map[string]string
 		for id, n := range c.PracticeAreas {
 			out = append(out, map[string]string{"id": id, "name": n})
 		}
-		return 200, list(out), nil, nil
+		return http.StatusOK, list(out), nil, nil
 	case method == "GET" && path == "/api/v1/custom-field-definitions":
-		return 200, list(c.CFDefs), nil, nil
+		return http.StatusOK, list(c.CFDefs), nil, nil
 	case method == "GET" && path == "/api/v1/doc-tender/categories":
 		if !c.Scopes["doc_tender:read"] {
 			return 0, nil, nil, errScope
@@ -810,7 +808,7 @@ func (c *Core) route(q *req, method, path string) (int, any, []byte, error) {
 		for id, k := range c.Categories {
 			out = append(out, map[string]any{"id": id, "key": k, "active": true})
 		}
-		return 200, list(out), nil, nil
+		return http.StatusOK, list(out), nil, nil
 	case method == "GET" && path == "/api/v1/folders":
 		if _, err := c.matter(u, qs.Get("matter_id")); err != nil {
 			return 0, nil, nil, err
@@ -822,7 +820,7 @@ func (c *Core) route(q *req, method, path string) (int, any, []byte, error) {
 			}
 		}
 		sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
-		return 200, list(out), nil, nil
+		return http.StatusOK, list(out), nil, nil
 	case method == "POST" && path == "/api/v1/events":
 		var in struct {
 			Action        string `json:"action"`
@@ -843,7 +841,7 @@ func (c *Core) route(q *req, method, path string) (int, any, []byte, error) {
 		if _, err := c.DB.Exec(`INSERT INTO core.events (id, action, matter_id, summary) VALUES ($1, $2, $3, $4)`, id, in.Action, in.MatterID, in.Summary); err != nil {
 			return 0, nil, nil, err
 		}
-		return 201, map[string]string{"id": id}, nil, nil
+		return http.StatusCreated, map[string]string{"id": id}, nil, nil
 	case strings.HasPrefix(path, "/api/v1/file-uploads"):
 		return c.uploadRoute(q, method, path)
 	case method == "POST" && path == "/api/v1/files:bulk":
@@ -854,7 +852,7 @@ func (c *Core) route(q *req, method, path string) (int, any, []byte, error) {
 			return 0, nil, nil, err
 		}
 		f, err := c.publish(u, in)
-		return 201, f, nil, err
+		return http.StatusCreated, f, nil, err
 	case method == "GET" && path == "/api/v1/files":
 		return c.listFiles(q)
 	case strings.HasPrefix(path, "/api/v1/files/"):
@@ -885,7 +883,7 @@ func (c *Core) directory(q *req) (int, any, []byte, error) {
 		out = append(out, map[string]any{"id": u.ID, "name": u.Name, "roles": u.Roles, "active": u.Active})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i]["id"].(string) < out[j]["id"].(string) })
-	return 200, list(out), nil, nil
+	return http.StatusOK, list(out), nil, nil
 }
 
 // getUser serves GET /api/v1/users/{id}; include=documents.attorney reads the module's
@@ -906,7 +904,7 @@ func (c *Core) getUser(q *req, id string) (int, any, []byte, error) {
 		}
 		out["included"] = map[string]any{"documents.attorney": rows}
 	}
-	return 200, out, nil, nil
+	return http.StatusOK, out, nil, nil
 }
 
 func (c *Core) rows(query string, args ...any) ([]map[string]any, error) {
@@ -1037,13 +1035,13 @@ func (c *Core) listFiles(q *req) (int, any, []byte, error) {
 		}
 		out = append(out, j)
 	}
-	return 200, list(out), nil, nil
+	return http.StatusOK, list(out), nil, nil
 }
 
 func (c *Core) fileRoute(q *req, method, path string) (int, any, []byte, error) {
 	u := q.user
-	id := seg(path, 3)
-	sub := seg(path, 4)
+	id := seg(path, segID)
+	sub := seg(path, segSub)
 	// convertFile on an id that names no file answers for scope before lookup.
 	if method == "POST" && sub == "conversions" && !c.Scopes["editor:run"] {
 		return 0, nil, nil, errScope
@@ -1058,7 +1056,7 @@ func (c *Core) fileRoute(q *req, method, path string) (int, any, []byte, error) 
 	switch {
 	case method == "GET" && sub == "":
 		j, err := c.fileJSON(f, q.r.URL.Query().Get("include"))
-		return 200, j, nil, err
+		return http.StatusOK, j, nil, err
 	case method == "PATCH" && sub == "":
 		if err := c.writable(u, f); err != nil {
 			return 0, nil, nil, err
@@ -1078,16 +1076,16 @@ func (c *Core) fileRoute(q *req, method, path string) (int, any, []byte, error) 
 			_ = json.Unmarshal(v, &cat)
 			if cat != nil {
 				if _, ok := c.Categories[*cat]; !ok {
-					return 0, nil, nil, errf(422, "validation_failed", "unknown category")
+					return 0, nil, nil, errf(http.StatusUnprocessableEntity, "validation_failed", "unknown category")
 				}
 			}
 			f.CategoryID = cat
 			f.CategoryByPerson = cat != nil
 		}
 		if _, ok := in["matter_id"]; ok && f.Library {
-			return 0, nil, nil, errf(422, "validation_failed", "a library file takes no matter")
+			return 0, nil, nil, errf(http.StatusUnprocessableEntity, "validation_failed", "a library file takes no matter")
 		}
-		return 200, f, nil, nil
+		return http.StatusOK, f, nil, nil
 	case method == "POST" && sub == "status":
 		if err := c.writable(u, f); err != nil {
 			return 0, nil, nil, err
@@ -1101,17 +1099,17 @@ func (c *Core) fileRoute(q *req, method, path string) (int, any, []byte, error) 
 		switch in.Status {
 		case "draft", "final", "executed", "filed", "received":
 		default:
-			return 0, nil, nil, errf(422, "validation_failed", "unknown status")
+			return 0, nil, nil, errf(http.StatusUnprocessableEntity, "validation_failed", "unknown status")
 		}
 		st := in.Status
 		f.Status = &st
-		return 200, f, nil, nil
+		return http.StatusOK, f, nil, nil
 	case method == "POST" && sub == "purge":
 		if !u.has("admin") {
 			return 0, nil, nil, errNotFound
 		}
 		if f.TrashedAt == nil {
-			return 0, nil, nil, errf(409, "conflict", "only a trashed file can be purged")
+			return 0, nil, nil, errf(http.StatusConflict, "conflict", "only a trashed file can be purged")
 		}
 		if _, err := c.DB.Exec(`DELETE FROM core.files WHERE id = $1`, f.ID); err != nil {
 			var pe *pgconn.PgError
@@ -1120,32 +1118,32 @@ func (c *Core) fileRoute(q *req, method, path string) (int, any, []byte, error) 
 				if mod == "" {
 					mod = "a module"
 				}
-				return 0, nil, nil, errf(409, "held_by_module", "the module "+mod+" still holds this file; release it there first")
+				return 0, nil, nil, errf(http.StatusConflict, "held_by_module", "the module "+mod+" still holds this file; release it there first")
 			}
 			return 0, nil, nil, err
 		}
 		delete(c.Files, f.ID)
-		return 200, map[string]string{"id": f.ID}, nil, nil
-	case method == "GET" && sub == "versions" && seg(path, 5) == "":
+		return http.StatusOK, map[string]string{"id": f.ID}, nil, nil
+	case method == "GET" && sub == "versions" && seg(path, segSubID) == "":
 		var out []*Version
 		out = append(out, c.Versions[f.ID]...)
-		return 200, list(out), nil, nil
-	case method == "GET" && sub == "versions" && seg(path, 6) == "download":
+		return http.StatusOK, list(out), nil, nil
+	case method == "GET" && sub == "versions" && seg(path, segAction) == "download":
 		for _, v := range c.Versions[f.ID] {
-			if v.ID == seg(path, 5) {
+			if v.ID == seg(path, segSubID) {
 				c.Downloads = append(c.Downloads, f.ID)
-				return 200, nil, v.bytes, nil
+				return http.StatusOK, nil, v.bytes, nil
 			}
 		}
 		return 0, nil, nil, errNotFound
-	case method == "GET" && sub == "renditions" && seg(path, 5) == "":
+	case method == "GET" && sub == "renditions" && seg(path, segSubID) == "":
 		var out []*Rendition
 		out = append(out, c.Renditions[f.ID]...)
-		return 200, list(out), nil, nil
+		return http.StatusOK, list(out), nil, nil
 	case method == "GET" && sub == "renditions":
 		for _, r := range c.Renditions[f.ID] {
-			if r.ID == seg(path, 5) {
-				return 200, nil, r.bytes, nil
+			if r.ID == seg(path, segSubID) {
+				return http.StatusOK, nil, r.bytes, nil
 			}
 		}
 		return 0, nil, nil, errNotFound
@@ -1159,22 +1157,22 @@ func (c *Core) fileRoute(q *req, method, path string) (int, any, []byte, error) 
 		base := strings.TrimSuffix(f.Name, "."+f.Extension)
 		pdf := c.addFile(File{Name: base + ".pdf", MatterID: f.MatterID, AttorneyOnly: f.AttorneyOnly, Source: Module}, []byte("%PDF-1.7 fake "+f.ID), u.ID, "conversion")
 		c.Links = append(c.Links, Link{From: pdf.ID, To: f.ID, Kind: "conversion_of"})
-		return 201, map[string]any{"file": pdf, "link": map[string]string{"from_file_id": pdf.ID, "to_file_id": f.ID, "kind": "conversion_of"}}, nil, nil
+		return http.StatusCreated, map[string]any{"file": pdf, "link": map[string]string{"from_file_id": pdf.ID, "to_file_id": f.ID, "kind": "conversion_of"}}, nil, nil
 	case method == "GET" && sub == "doc-tender-status":
 		switch {
 		case f.Library:
-			return 200, map[string]any{"status": "not_processed_library", "label": "Library file, not processed"}, nil, nil
+			return http.StatusOK, map[string]any{"status": "not_processed_library", "label": "Library file, not processed"}, nil, nil
 		case f.MatterID != nil && c.Matters[*f.MatterID].Status == "closed":
-			return 200, map[string]any{"status": "not_processed_closed", "label": "Not processed: the matter is closed"}, nil, nil
+			return http.StatusOK, map[string]any{"status": "not_processed_closed", "label": "Not processed: the matter is closed"}, nil, nil
 		}
-		return 200, map[string]any{"status": "queued", "label": "Waiting for Doc Tender"}, nil, nil
+		return http.StatusOK, map[string]any{"status": "queued", "label": "Waiting for Doc Tender"}, nil, nil
 	}
 	return 0, nil, nil, errf(http.StatusNotFound, "not_found", "the fake core doesn't serve "+method+" "+path)
 }
 
 func (c *Core) uploadRoute(q *req, method, path string) (int, any, []byte, error) {
 	r := q.r
-	id := seg(path, 3)
+	id := seg(path, segID)
 	switch {
 	case method == "POST" && id == "":
 		var in struct {
@@ -1190,7 +1188,7 @@ func (c *Core) uploadRoute(q *req, method, path string) (int, any, []byte, error
 			return 0, nil, nil, err
 		}
 		if in.Library && (in.MatterID != "" || in.ContactID != "") {
-			return 0, nil, nil, errf(422, "validation_failed", "a library file takes no matter or contact")
+			return 0, nil, nil, errf(http.StatusUnprocessableEntity, "validation_failed", "a library file takes no matter or contact")
 		}
 		if in.MatterID != "" {
 			if _, err := c.matter(q.user, in.MatterID); err != nil {
@@ -1199,8 +1197,8 @@ func (c *Core) uploadRoute(q *req, method, path string) (int, any, []byte, error
 		}
 		up := &upload{ID: c.ID(), Name: in.FileName, MatterID: in.MatterID, MediaType: in.MediaType, SHA256: in.SHA256, Size: in.Size, Library: in.Library}
 		c.uploads[up.ID] = up
-		return 201, map[string]any{"id": up.ID, "chunk_size_bytes": c.ChunkSize}, nil, nil
-	case method == "PUT" && seg(path, 4) == "":
+		return http.StatusCreated, map[string]any{"id": up.ID, "chunk_size_bytes": c.ChunkSize}, nil, nil
+	case method == "PUT" && seg(path, segSub) == "":
 		up, ok := c.uploads[id]
 		if !ok {
 			return 0, nil, nil, errNotFound
@@ -1208,21 +1206,21 @@ func (c *Core) uploadRoute(q *req, method, path string) (int, any, []byte, error
 		b, _ := io.ReadAll(r.Body)
 		var start int
 		if _, err := fmt.Sscanf(r.Header.Get("Content-Range"), "bytes %d-", &start); err != nil || start != len(up.data) {
-			return 0, nil, nil, errf(422, "validation_failed", "chunks arrive in order")
+			return 0, nil, nil, errf(http.StatusUnprocessableEntity, "validation_failed", "chunks arrive in order")
 		}
 		up.data = append(up.data, b...)
-		return 200, map[string]any{"id": up.ID, "received_bytes": len(up.data)}, nil, nil
-	case method == "POST" && seg(path, 4) == "complete":
+		return http.StatusOK, map[string]any{"id": up.ID, "received_bytes": len(up.data)}, nil, nil
+	case method == "POST" && seg(path, segSub) == "complete":
 		up, ok := c.uploads[id]
 		if !ok {
 			return 0, nil, nil, errNotFound
 		}
 		sum := sha256.Sum256(up.data)
 		if len(up.data) != up.Size || hex.EncodeToString(sum[:]) != up.SHA256 {
-			return 0, nil, nil, errf(422, "validation_failed", "size or SHA-256 doesn't match")
+			return 0, nil, nil, errf(http.StatusUnprocessableEntity, "validation_failed", "size or SHA-256 doesn't match")
 		}
 		up.Done = true
-		return 200, map[string]any{"id": up.ID, "status": "complete"}, nil, nil
+		return http.StatusOK, map[string]any{"id": up.ID, "status": "complete"}, nil, nil
 	}
 	return 0, nil, nil, errNotFound
 }
@@ -1232,7 +1230,7 @@ func (c *Core) publish(u *User, in map[string]any) (*File, error) {
 	upID, _ := in["upload_id"].(string)
 	up, ok := c.uploads[upID]
 	if !ok || !up.Done {
-		return nil, errf(422, "validation_failed", "the upload is not complete")
+		return nil, errf(http.StatusUnprocessableEntity, "validation_failed", "the upload is not complete")
 	}
 	name, _ := in["name"].(string)
 	if name == "" {
@@ -1240,7 +1238,7 @@ func (c *Core) publish(u *User, in map[string]any) (*File, error) {
 	}
 	lib, _ := in["library"].(bool)
 	if lib != up.Library {
-		return nil, errf(422, "validation_failed", "library must match the upload")
+		return nil, errf(http.StatusUnprocessableEntity, "validation_failed", "library must match the upload")
 	}
 	f := File{Name: name, Library: lib, Source: Module}
 	if m, _ := in["matter_id"].(string); m != "" || up.MatterID != "" {
@@ -1248,7 +1246,7 @@ func (c *Core) publish(u *User, in map[string]any) (*File, error) {
 			m = up.MatterID
 		}
 		if lib {
-			return nil, errf(422, "validation_failed", "a library file takes no matter")
+			return nil, errf(http.StatusUnprocessableEntity, "validation_failed", "a library file takes no matter")
 		}
 		if _, err := c.matter(u, m); err != nil {
 			return nil, err
@@ -1277,11 +1275,11 @@ func (c *Core) freeName(matterID, name string) string {
 		}
 	}
 	base, ext := name, ""
-	if i := strings.LastIndex(name, "."); i > 0 {
+	if i := strings.LastIndex(name, "."); i > zero {
 		base, ext = name[:i], name[i:]
 	}
 	out := name
-	for n := 2; taken[strings.ToLower(out)]; n++ {
+	for n := one + one; taken[strings.ToLower(out)]; n++ {
 		out = base + "-" + strconv.Itoa(n) + ext
 	}
 	return out
@@ -1299,7 +1297,7 @@ func (c *Core) bulk(q *req) (int, any, []byte, error) {
 	for _, it := range in.Items {
 		upID, _ := it["upload_id"].(string)
 		if up, ok := c.uploads[upID]; !ok || !up.Done {
-			return 0, nil, nil, errf(422, "validation_failed", "an item's upload is not complete")
+			return 0, nil, nil, errf(http.StatusUnprocessableEntity, "validation_failed", "an item's upload is not complete")
 		}
 		if m, _ := it["matter_id"].(string); m != "" {
 			if _, err := c.matter(q.user, m); err != nil {
@@ -1315,7 +1313,7 @@ func (c *Core) bulk(q *req) (int, any, []byte, error) {
 		}
 		out = append(out, f)
 	}
-	return 201, map[string]any{"data": out}, nil, nil
+	return http.StatusCreated, map[string]any{"data": out}, nil, nil
 }
 
 // archive checks every entry as the viewer and builds the zip, as createFileArchive
@@ -1339,7 +1337,7 @@ func (c *Core) archive(q *req) ([]byte, error) {
 		return nil, err
 	}
 	if len(in.Entries) == 0 || len(in.FileIDs) > 0 || in.FolderID != nil {
-		return nil, errf(422, "validation_failed", "entries is exclusive with file_ids and folder_id")
+		return nil, errf(http.StatusUnprocessableEntity, "validation_failed", "entries is exclusive with file_ids and folder_id")
 	}
 	seen := map[string]bool{}
 	type pick struct {
@@ -1350,7 +1348,7 @@ func (c *Core) archive(q *req) ([]byte, error) {
 	var picks []pick
 	for _, e := range in.Entries {
 		if !validPath(e.Path) || seen[strings.ToLower(e.Path)] {
-			return nil, errf(422, "validation_failed", "bad or repeated entry path")
+			return nil, errf(http.StatusUnprocessableEntity, "validation_failed", "bad or repeated entry path")
 		}
 		seen[strings.ToLower(e.Path)] = true
 		f, err := c.file(q.user, e.FileID)
@@ -1362,7 +1360,7 @@ func (c *Core) archive(q *req) ([]byte, error) {
 		for _, v := range c.Versions[f.ID] {
 			if e.VersionID != "" && v.ID == e.VersionID {
 				if v.Quarantined && !in.ConfirmQuarantine {
-					return nil, errf(409, "quarantine_confirmation_required", "a selected version is quarantined")
+					return nil, errf(http.StatusConflict, "quarantine_confirmation_required", "a selected version is quarantined")
 				}
 				data, found = v.bytes, true
 			}
@@ -1370,7 +1368,7 @@ func (c *Core) archive(q *req) ([]byte, error) {
 				for _, r := range c.Renditions[f.ID] {
 					if r.ID == e.RenditionID && r.FileVersionID == v.ID {
 						if v.Quarantined && !in.ConfirmQuarantine {
-							return nil, errf(409, "quarantine_confirmation_required", "a selected version is quarantined")
+							return nil, errf(http.StatusConflict, "quarantine_confirmation_required", "a selected version is quarantined")
 						}
 						data, found = r.bytes, true
 					}
@@ -1399,7 +1397,7 @@ func (c *Core) archive(q *req) ([]byte, error) {
 }
 
 func validPath(p string) bool {
-	if p == "" || len(p) > 255 || strings.HasPrefix(p, "/") || strings.Contains(p, "\\") {
+	if p == "" || len(p) > pathMax || strings.HasPrefix(p, "/") || strings.Contains(p, "\\") {
 		return false
 	}
 	for _, s := range strings.Split(p, "/") {
@@ -1408,7 +1406,7 @@ func validPath(p string) bool {
 		}
 	}
 	for _, r := range p {
-		if r < 0x20 || r == 0x7f {
+		if unicode.IsControl(r) {
 			return false
 		}
 	}

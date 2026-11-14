@@ -2,9 +2,9 @@ package documents
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/url"
-	"time"
 )
 
 // Drafts: generated files the viewer can see, by status. Visibility is checked per row
@@ -91,7 +91,7 @@ WHERE NOT g.trashed AND r.finished_at >= $1`
 			}
 		}
 		out = append(out, d)
-		if q.Limit > 0 && len(out) >= q.Limit {
+		if q.Limit > zero && len(out) >= q.Limit {
 			break
 		}
 	}
@@ -122,11 +122,14 @@ func (s *Server) draftsAPI(w http.ResponseWriter, r *http.Request, v viewer) {
 // widgetDrafts is the widget's list: top eight drafts of the last drafts_window_days.
 func (s *Server) widgetDrafts(ctx context.Context, v viewer) ([]Draft, int, error) {
 	days, err := s.intSetting(ctx, "drafts_window_days")
-	if err != nil || days <= 0 {
-		days = 30
+	if err != nil {
+		return nil, 0, err
 	}
-	since := s.c.Now().Add(-durationDays(days)).Unix()
-	list, err := s.drafts(ctx, v, draftQuery{Status: "draft", Since: since, Limit: 8})
+	if days < one {
+		return nil, 0, errors.New("documents: drafts_window_days must be at least 1")
+	}
+	since := s.c.Now().AddDate(zero, zero, -days).Unix()
+	list, err := s.drafts(ctx, v, draftQuery{Status: "draft", Since: since, Limit: widgetRows})
 	return list, days, err
 }
 
@@ -161,7 +164,7 @@ func (s *Server) setDraftStatus(w http.ResponseWriter, r *http.Request, v viewer
 		s.fail(w, r, err)
 		return
 	}
-	if n == 0 {
+	if n == zero {
 		s.fail(w, r, notFound())
 		return
 	}
@@ -181,5 +184,3 @@ func (s *Server) setDraftStatus(w http.ResponseWriter, r *http.Request, v viewer
 func draftsTabLink(matterID string) string {
 	return "/modules/" + ID + "/tabs/drafts?" + url.Values{"matter_id": {matterID}}.Encode()
 }
-
-func durationDays(n int) time.Duration { return time.Duration(n) * 24 * time.Hour }

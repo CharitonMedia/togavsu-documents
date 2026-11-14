@@ -163,9 +163,9 @@ var textScan = regexp.MustCompile(`<w:p(?:\s[^>]*)?/>|<w:p(?:\s[^>]*)?>|</w:p>|<
 func scanText(x string) []textEl {
 	var out []textEl
 	var stack []int
-	next := 0
+	var next int
 	for _, m := range textScan.FindAllStringSubmatchIndex(x, -1) {
-		tag := x[m[0]:m[1]]
+		tag := x[m[0]:m[matchEnd]]
 		switch {
 		case strings.HasPrefix(tag, "</w:p"):
 			if len(stack) > 0 {
@@ -176,12 +176,12 @@ func scanText(x string) []textEl {
 				next++
 				stack = append(stack, next)
 			}
-		case m[2] >= 0:
-			p := 0
+		case m[groupStart] != -1:
+			var p int
 			if len(stack) > 0 {
 				p = stack[len(stack)-1]
 			}
-			out = append(out, textEl{start: m[0], end: m[1], cstart: m[2], cend: m[3], para: p})
+			out = append(out, textEl{start: m[0], end: m[matchEnd], cstart: m[groupStart], cend: m[groupEnd], para: p})
 		}
 	}
 	return out
@@ -212,7 +212,7 @@ func partTokens(x string) []string {
 			sb.WriteString(x[els[i].cstart:els[i].cend])
 		}
 		for _, m := range tokenRe.FindAllStringSubmatch(sb.String(), -1) {
-			out = append(out, m[1])
+			out = append(out, m[firstGroup])
 		}
 	}
 	return out
@@ -260,7 +260,7 @@ func fillPart(x string, value func(name string) (string, bool)) string {
 		ms := tokenRe.FindAllStringSubmatchIndex(joined, -1)
 		for j := len(ms) - 1; j >= 0; j-- {
 			m := ms[j]
-			name := joined[m[2]:m[3]]
+			name := joined[m[groupStart]:m[groupEnd]]
 			v, ok := value(name)
 			if strings.HasPrefix(name, "slot:") || !ok {
 				continue
@@ -269,10 +269,10 @@ func fillPart(x string, value func(name string) (string, bool)) string {
 			first := true
 			for k, i := range idx {
 				lo, hi := offs[k], offs[k]+len(x[els[i].cstart:els[i].cend])
-				if m[1] <= lo || m[0] >= hi {
+				if m[matchEnd] <= lo || m[0] >= hi {
 					continue
 				}
-				a, b := max(m[0], lo)-lo, min(m[1], hi)-lo
+				a, b := max(m[0], lo)-lo, min(m[matchEnd], hi)-lo
 				c := content[i]
 				if first {
 					content[i] = c[:a] + repl + c[b:]
@@ -285,7 +285,7 @@ func fillPart(x string, value func(name string) (string, bool)) string {
 		}
 	}
 	var out strings.Builder
-	last := 0
+	var last int
 	for i, e := range els {
 		if !changed[i] {
 			continue
@@ -314,25 +314,25 @@ type element struct {
 // bodyChildren finds w:body and its direct child elements.
 func bodyChildren(x string) (bodyOpen, bodyClose int, kids []element, err error) {
 	bo := strings.Index(x, "<w:body")
-	if bo < 0 {
+	if bo == -1 {
 		return 0, 0, nil, errNoDocument
 	}
 	gt := strings.Index(x[bo:], ">")
-	if gt < 0 {
+	if gt == -1 {
 		return 0, 0, nil, errNoDocument
 	}
 	i := bo + gt + 1
 	bodyOpen = i
-	depth := 0
+	var depth int
 	cur := element{}
 	for i < len(x) {
 		lt := strings.IndexByte(x[i:], '<')
-		if lt < 0 {
+		if lt == -1 {
 			break
 		}
 		lt += i
 		end := strings.IndexByte(x[lt:], '>')
-		if end < 0 {
+		if end == -1 {
 			break
 		}
 		end += lt + 1
@@ -340,21 +340,21 @@ func bodyChildren(x string) (bodyOpen, bodyClose int, kids []element, err error)
 		switch {
 		case strings.HasPrefix(tag, "<?"), strings.HasPrefix(tag, "<!"):
 		case strings.HasPrefix(tag, "</"):
-			if depth == 0 {
+			if depth == zero {
 				return bodyOpen, lt, kids, nil // </w:body>
 			}
 			depth--
-			if depth == 0 {
+			if depth == zero {
 				cur.end = end
 				kids = append(kids, cur)
 			}
 		default:
 			name := strings.TrimPrefix(tag, "<")
-			if k := strings.IndexAny(name, " \t\r\n/>"); k >= 0 {
+			if k := strings.IndexAny(name, " \t\r\n/>"); k != -1 {
 				name = name[:k]
 			}
 			self := strings.HasSuffix(tag, "/>")
-			if depth == 0 {
+			if depth == zero {
 				cur = element{start: lt, name: name}
 				if self {
 					cur.end = end
@@ -389,17 +389,17 @@ func (d *docx) slots() ([]string, error) {
 		return nil, err
 	}
 	var out []string
-	lone := 0
+	var lone int
 	for _, k := range kids {
 		if k.name != "w:p" {
 			continue
 		}
 		if m := slotRe.FindStringSubmatch(joinedText(x[k.start:k.end])); m != nil {
-			out = append(out, m[1])
+			out = append(out, m[firstGroup])
 			lone++
 		}
 	}
-	all := 0
+	var all int
 	for _, n := range d.textParts() {
 		for _, t := range partTokens(string(d.parts[n])) {
 			if strings.HasPrefix(t, "slot:") {
@@ -492,7 +492,7 @@ func (d *docx) fillSlots(bodies map[string]string) error {
 		return err
 	}
 	var out strings.Builder
-	last := 0
+	var last int
 	for _, k := range kids {
 		if k.name != "w:p" {
 			continue
@@ -501,9 +501,9 @@ func (d *docx) fillSlots(bodies map[string]string) error {
 		if m == nil {
 			continue
 		}
-		body, ok := bodies[m[1]]
+		body, ok := bodies[m[firstGroup]]
 		if !ok {
-			return fmt.Errorf("slot %s is not mapped", m[1])
+			return fmt.Errorf("slot %s is not mapped", m[firstGroup])
 		}
 		out.WriteString(x[last:k.start])
 		out.WriteString(body)
