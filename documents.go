@@ -12,7 +12,6 @@ package documents
 import (
 	"database/sql"
 	"embed"
-	"errors"
 	"io"
 	"io/fs"
 	"log"
@@ -51,45 +50,6 @@ func Files() (map[string][]byte, error) {
 		return nil
 	})
 	return out, err
-}
-
-// Packager packages and signs the module for the marketplace. The core verifies
-// packages with its own internal code (internal/modules and internal/marketplace), which
-// a standalone module can't import, and a copy would drift from what the core checks. So
-// packaging and signing go through this adapter, and the default is a stub that refuses
-// until the core publishes a public packaging and signing package or CLI.
-type Packager interface {
-	// Package turns the package files (manifest and migrations by path) into the
-	// marketplace's signed package file, signed with the author key at keyFile.
-	Package(files map[string][]byte, keyFile string) ([]byte, error)
-}
-
-// ErrPackagingUnavailable is the stub's answer.
-var ErrPackagingUnavailable = errors.New("documents: packaging and signing wait on a public packaging and signing package or CLI from the core")
-
-type stubPackager struct{}
-
-func (stubPackager) Package(map[string][]byte, string) ([]byte, error) {
-	return nil, ErrPackagingUnavailable
-}
-
-// DefaultPackager is the packager the package command uses.
-var DefaultPackager Packager = stubPackager{}
-
-// Build packages and signs the module through p (DefaultPackager when nil). edit, when
-// set, changes the files first.
-func Build(p Packager, keyFile string, edit func(map[string][]byte)) ([]byte, error) {
-	files, err := Files()
-	if err != nil {
-		return nil, err
-	}
-	if edit != nil {
-		edit(files)
-	}
-	if p == nil {
-		p = DefaultPackager
-	}
-	return p.Package(files, keyFile)
 }
 
 // Config is what the container gets: the core's address, its secrets and its own DB.

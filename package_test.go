@@ -1,7 +1,6 @@
 package documents
 
 import (
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -10,9 +9,8 @@ import (
 	"testing"
 )
 
-// The static half of MOD-DOC-01. The core's own manifest parser and migration checker
-// (internal/modules) can't be imported from this repository, so these tests check the
-// package's own shape; the authoritative check runs when the core installs the package.
+// The static half of MOD-DOC-01: the package's own shape. The core's install checks run
+// through pkg/modulekit in kit_test.go.
 
 func manifest(t *testing.T) string {
 	t.Helper()
@@ -132,25 +130,3 @@ func TestMigrationRules(t *testing.T) {
 	}
 }
 
-type recordingPackager struct{ got map[string][]byte }
-
-func (p *recordingPackager) Package(files map[string][]byte, _ string) ([]byte, error) {
-	p.got = files
-	return []byte("signed"), nil
-}
-
-// Packaging and signing wait on the core's public package or CLI: the default stub says
-// so, and an adapter gets every package file.
-func TestPackagerAdapter(t *testing.T) {
-	if _, err := Build(nil, "unused", nil); !errors.Is(err, ErrPackagingUnavailable) {
-		t.Fatalf("stub: %v", err)
-	}
-	p := &recordingPackager{}
-	out, err := Build(p, "unused", func(f map[string][]byte) { f["migrations/0001_library.sql"] = []byte("tampered") })
-	if err != nil || string(out) != "signed" {
-		t.Fatalf("adapter: %q %v", out, err)
-	}
-	if len(p.got) != 7 || string(p.got["migrations/0001_library.sql"]) != "tampered" {
-		t.Fatalf("adapter got %d files", len(p.got))
-	}
-}

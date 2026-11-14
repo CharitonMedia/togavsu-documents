@@ -7,12 +7,14 @@
 // togavsu_api_token, togavsu_webhook_secret, togavsu_db_role, togavsu_db_password and
 // togavsu_db_schema.
 //
-// Packaging and signing go through documents.DefaultPackager, which waits on a public
-// packaging and signing package or CLI from the core; until then the package command
-// says so and writes nothing.
+// The package command runs the core's own install checks on the package (pkg/modulekit),
+// refuses to sign a package they refuse, archives it, signs it with the base64 Ed25519
+// seed in the key file and prints the PEM public key the admin trusts. It never makes or
+// stores a key.
 package main
 
 import (
+	"crypto/ed25519"
 	"database/sql"
 	"flag"
 	"fmt"
@@ -25,6 +27,7 @@ import (
 	"time"
 
 	documents "github.com/CharitonMedia/togavsu-documents"
+	"github.com/CharitonMedia/togavsu/pkg/modulekit"
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
@@ -89,15 +92,38 @@ func serve(args []string) {
 
 func pack(args []string) {
 	fs := flag.NewFlagSet("package", flag.ExitOnError)
-	keyFile := fs.String("key", "", "author signing key file")
+	keyFile := fs.String("key", "", "file holding the author's base64 Ed25519 signing seed")
 	out := fs.String("out", "documents.signed.json", "signed package file to write")
 	_ = fs.Parse(args)
-	pkg, err := documents.Build(nil, *keyFile, nil)
+	if *keyFile == "" {
+		log.Fatal("package: -key is required")
+	}
+	text, err := os.ReadFile(*keyFile)
 	if err != nil {
 		log.Fatal(err)
 	}
-	if err := os.WriteFile(*out, pkg, 0o644); err != nil {
+	priv, err := modulekit.ParseSeed(string(text))
+	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Printf("wrote %s\n", *out)
+	files, err := documents.Files()
+	if err != nil {
+		log.Fatal(err)
+	}
+	signed, err := build(priv, files)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if err := os.WriteFile(*out, signed, 0o644); err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("wrote %s\n%s", *out, modulekit.PublicKeyPEM(priv.Public().(ed25519.PublicKey)))
+}
+
+// build runs the install checks on files, then archives and signs them.
+func build(priv ed25519.PrivateKey, files map[string][]byte) ([]byte, error) {
+	if _, _, err := modulekit.Check(files); err != nil {
+		return nil, err
+	}
+	return modulekit.Build(priv, files)
 }
