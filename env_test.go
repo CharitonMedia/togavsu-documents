@@ -214,6 +214,8 @@ func (e *env) seed() {
 	e.oppParty = c.AddParty(fakecore.Party{MatterID: e.matter.ID, ContactID: e.casey.ID, Role: "opposing_party", Primary: true})
 }
 
+func (e *env) ctx() context.Context { return context.Background() }
+
 func (e *env) tok(u *fakecore.User) string { return e.core.Token(u.ID, "") }
 
 // resp is one answer from the module.
