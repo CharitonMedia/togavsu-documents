@@ -1,0 +1,44 @@
+{{define "head"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}}</title>
+<link rel="stylesheet" href="{{prefix}}/static/style.css">
+<script src="{{prefix}}/static/app.js" defer></script>
+</head>
+<body>
+<main>
+<h1>{{.Title}}</h1>
+{{if .Matter}}<p class="matter">{{.Matter.Number}} {{.Matter.Name}}{{if eq .Matter.Status "closed"}} <span class="tag">Closed</span>{{end}}</p>{{end}}
+{{if .Message}}<p class="note">{{.Message}}</p>{{end}}
+{{end}}
+
+{{define "foot"}}</main>
+</body>
+</html>
+{{end}}
+
+{{define "ctx"}}<input type="hidden" name="context" value="{{.}}">{{end}}
+
+{{define "error"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Documents</title>
+<link rel="stylesheet" href="{{prefix}}/static/style.css">
+</head>
+<body>
+<main>
+{{if eq .Status 404}}<h1>Not found</h1>
+<p>This page isn't available to you.</p>
+{{else}}<h1>That didn't work</h1>
+<p class="problem">{{index .Body "message"}}</p>
+{{with index .Body "missing"}}<ul class="problems">{{range .}}<li>{{.TemplateName}}{{if .Token}}: {{.Token}}{{end}} ({{.Reason}})</li>{{end}}</ul>{{end}}
+<p><a href="javascript:history.back()">Go back</a></p>
+{{end}}
+</main>
+</body>
+</html>
+{{end}}

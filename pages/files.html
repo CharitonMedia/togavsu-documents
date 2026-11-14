@@ -1,0 +1,64 @@
+{{define "download"}}{{template "head" .}}
+{{$c := .Context}}{{$m := .Matter}}{{$d := .Data}}
+<form method="post" action="{{prefix}}/api/matters/{{$m.ID}}/zip">
+{{template "ctx" $c}}<input type="hidden" name="_return" value="/matter/download?matter_id={{$m.ID}}">
+<fieldset><legend>What</legend>
+<label><input type="radio" name="scope" value="matter" checked> Whole matter</label>
+<label><input type="radio" name="scope" value="folder"> One folder <select name="folder_id"><option value="">Pick a folder</option>{{range $d.Folders}}<option value="{{.ID}}">{{.Name}}</option>{{end}}</select></label>
+<label><input type="radio" name="scope" value="selection"> These files:</label>
+{{range $d.Files}}<label class="sub"><input type="checkbox" name="file_ids" value="{{.ID}}"> {{.Name}}</label>{{end}}
+</fieldset>
+<label>Status <select name="status"><option value="">Any</option>{{range $k := list "draft" "final" "executed" "filed" "received"}}<option>{{$k}}</option>{{end}}</select></label>
+{{if .Grants.DocTender}}<label>Category <select name="category_id"><option value="">Any</option>{{range $d.Categories}}<option value="{{.ID}}">{{.Key}}</option>{{end}}</select></label>{{end}}
+<label>Versions <select name="versions"><option value="current">Current</option><option value="all">All</option></select></label>
+<label><input type="checkbox" name="with_markdown" value="true"> Markdown copies</label>
+<label>Layout <select name="layout"><option value="folders"{{if ne $d.Layout "flat"}} selected{{end}}>Folders</option><option value="flat"{{if eq $d.Layout "flat"}} selected{{end}}>Flat</option></select></label>
+<button>Download</button>
+</form>
+{{template "foot" .}}{{end}}
+
+{{define "zipconfirm"}}{{template "head" .}}
+{{$c := .Context}}{{$m := .Matter}}{{$in := .Data.Input}}
+<p>These files have quarantined versions:</p>
+<ul>{{range .Data.Held}}<li>{{.Name}}</li>{{end}}</ul>
+{{range $choice := list "include" "leave_out"}}<form method="post" action="{{prefix}}/api/matters/{{$m.ID}}/zip" class="inline">
+{{template "ctx" $c}}<input type="hidden" name="_return" value="/matter/download?matter_id={{$m.ID}}">
+<input type="hidden" name="scope" value="{{$in.Scope}}"><input type="hidden" name="folder_id" value="{{$in.FolderID}}">
+{{range $in.FileIDs}}<input type="hidden" name="file_ids" value="{{.}}">{{end}}
+<input type="hidden" name="status" value="{{$in.Status}}"><input type="hidden" name="category_id" value="{{$in.CategoryID}}">
+<input type="hidden" name="versions" value="{{$in.Versions}}"><input type="hidden" name="with_markdown" value="{{$in.Markdown}}">
+<input type="hidden" name="layout" value="{{$in.Layout}}"><input type="hidden" name="quarantine" value="{{$choice}}">
+<button>{{if eq $choice "include"}}Include after confirming{{else}}Leave them out{{end}}</button>
+</form>{{end}}
+{{template "foot" .}}{{end}}
+
+{{define "versions_pick"}}{{template "head" .}}
+{{$c := .Context}}
+{{range .Data}}<p><a href="{{link $c (print "/files/" .ID)}}">{{.Name}}</a></p>{{else}}<p>No files on this matter.</p>{{end}}
+{{template "foot" .}}{{end}}
+
+{{define "file"}}{{template "head" .}}
+{{$c := .Context}}{{$f := .Data}}
+<p class="actions"><button type="button" data-editor="{{$f.FileID}}">Open in editor</button>
+<a href="{{link $c "/templates/new" "mode" "from_file" "file_id" $f.FileID}}">Save as template</a></p>
+<form method="get" action="{{prefix}}/files/{{$f.FileID}}/compare" class="row">{{template "ctx" $c}}
+<label>Compare <select name="a">{{range $f.Versions}}<option value="{{.Number}}">v{{.Number}}</option>{{end}}</select></label>
+<label>with <select name="b">{{range $f.Versions}}<option value="{{.Number}}">v{{.Number}}</option>{{end}}</select></label>
+<button>Compare</button></form>
+<table><thead><tr><th>Version</th><th>How</th><th>Label and note</th><th></th></tr></thead><tbody>
+{{range $f.Versions}}<tr><td>v{{.Number}}{{if .Quarantined}} <span class="tag">Quarantined</span>{{end}}{{if not .Markdown}} <small>No Markdown copy yet</small>{{end}}</td><td>{{.How}}</td>
+<td><form method="post" action="{{prefix}}/api/files/{{$f.FileID}}/versions/{{.Number}}/note" class="inline">{{template "ctx" $c}}<input type="hidden" name="_return" value="/files/{{$f.FileID}}">
+{{$l := .Label}}<select name="label" aria-label="Label"><option value="">No label</option>{{range $k := list "sent" "signed" "filed" "reviewed" "other"}}<option{{if eq $k $l}} selected{{end}}>{{$k}}</option>{{end}}</select>
+<input name="note" value="{{.Note}}" aria-label="Note"><button>Save</button></form></td>
+<td><form method="post" action="{{prefix}}/api/files/{{$f.FileID}}/versions/{{.Number}}/copy" class="inline">{{template "ctx" $c}}<input type="hidden" name="_return" value="/files/{{$f.FileID}}"><button>Copy as new file</button></form></td></tr>
+{{end}}</tbody></table>
+{{template "foot" .}}{{end}}
+
+{{define "compare"}}{{template "head" .}}
+{{$d := .Data}}
+<p>{{$d.Name}}: v{{$d.A.Number}} and v{{$d.B.Number}}</p>
+{{if not $d.A.Ready}}<p class="note">v{{$d.A.Number}}: {{$d.A.Message}}{{with $d.A.DocTender}} (Doc Tender: {{.}}){{end}}</p>{{end}}
+{{if not $d.B.Ready}}<p class="note">v{{$d.B.Number}}: {{$d.B.Message}}{{with $d.B.DocTender}} (Doc Tender: {{.}}){{end}}</p>{{end}}
+{{if and $d.A.Ready $d.B.Ready}}<pre class="diff">{{range $d.Lines}}<span class="{{if eq .Op "+"}}add{{else if eq .Op "-"}}del{{else}}same{{end}}">{{.Op}} {{.Text}}</span>
+{{end}}</pre>{{end}}
+{{template "foot" .}}{{end}}

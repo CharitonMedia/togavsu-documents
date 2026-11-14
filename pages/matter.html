@@ -1,0 +1,84 @@
+{{define "matter"}}{{template "head" .}}
+{{$c := .Context}}{{$m := .Matter}}{{$d := .Data}}
+<p class="actions"><a href="{{link $c "/matter/new" "matter_id" $m.ID}}">New from template</a>
+<a href="{{link $c "/matter/download" "matter_id" $m.ID}}">Download files as zip</a>
+<a href="{{link $c "/drafts" "matter_id" $m.ID}}">Drafts on this matter</a></p>
+<h2>Recent runs</h2>
+{{template "runs" (runs $c $d.Runs)}}
+<h2>Files</h2>
+{{if not $d.Files}}<p>No files on this matter.</p>{{else}}<ul>{{range $d.Files}}<li>{{.Name}} {{with .Status}}<span class="tag">{{.}}</span>{{end}} <a href="{{link $c (print "/files/" .ID)}}">Version tools</a></li>{{end}}</ul>{{end}}
+{{template "foot" .}}{{end}}
+
+{{define "runs"}}{{$c := .Context}}
+{{if not .Runs}}<p>Nothing generated yet.</p>{{else}}<table><thead><tr><th>Run</th><th>Outcome</th><th>Files</th><th>Typed by hand</th><th></th></tr></thead><tbody>
+{{range .Runs}}<tr><td>{{date .FinishedAt}}</td><td>{{if eq .Outcome "pdf_failed"}}PDF failed{{else}}{{.Outcome}}{{end}}</td><td>{{.FileCount}}</td><td>{{join .ManualTokens ", "}}</td>
+<td>{{if eq .Outcome "pdf_failed"}}<form method="post" action="{{prefix}}/api/runs/{{.ID}}/retry-pdf">{{template "ctx" $c}}<input type="hidden" name="_return" value="/matter?matter_id={{.MatterID}}"><button>Retry PDF</button></form>{{end}}
+{{if eq .Outcome "failed"}}<small>{{range $i, $e := .ErrorReport}}{{if $i}}; {{end}}{{$e.TemplateName}}{{if $e.Token}}: {{$e.Token}}{{end}}{{end}}</small>{{end}}</td></tr>
+{{end}}</tbody></table>{{end}}
+{{end}}
+
+{{define "recent"}}{{template "head" .}}
+{{template "runs" (runs .Context .Data)}}
+{{template "foot" .}}{{end}}
+
+{{define "pick"}}{{template "head" .}}
+{{$c := .Context}}{{$m := .Matter}}
+<h2>Templates</h2>
+{{range .Data.Templates}}<p><a href="{{link $c "/matter/new" "matter_id" $m.ID "template_id" .ID}}">{{.Name}}</a><br><small>{{.Description}}</small></p>{{else}}<p>No active templates fit this matter.</p>{{end}}
+<h2>Packages</h2>
+{{range .Data.Packages}}<p><a href="{{link $c "/matter/new" "matter_id" $m.ID "package_id" .ID}}">{{.Name}}</a> ({{len .TemplateIDs}} templates)</p>{{else}}<p>No active packages fit this matter.</p>{{end}}
+{{template "foot" .}}{{end}}
+
+{{define "assemble"}}{{template "head" .}}
+{{$c := .Context}}{{$m := .Matter}}{{$a := .Data.A}}{{$in := .Data.In}}
+{{if $a.Note}}<p class="note">{{$a.Note}}</p>{{end}}
+<p>Templates: {{range $i, $t := $a.Templates}}{{if $i}}, {{end}}{{$t.Name}}{{end}}</p>
+{{if $a.Refused}}<ul class="problems">{{range $a.Refused}}<li>{{.TemplateName}}: {{.Reason}}</li>{{end}}</ul>{{end}}
+<form method="get" action="{{prefix}}/matter/new">
+{{template "ctx" $c}}<input type="hidden" name="matter_id" value="{{$m.ID}}">
+{{with $in.TemplateID}}<input type="hidden" name="template_id" value="{{.}}">{{end}}{{with $in.PackageID}}<input type="hidden" name="package_id" value="{{.}}">{{end}}
+{{if $a.NeedsClientChoice}}<label>Client who fills the client tokens <select name="client_contact_id">{{range $a.Clients}}<option value="{{.ContactID}}"{{if eq .ContactID $a.ClientContactID}} selected{{end}}>{{.Name}}{{if .Primary}} (primary){{end}}</option>{{end}}</select></label>{{end}}
+<label>Served party <select name="served_party_id"><option value="">None</option>{{range $a.Parties}}<option value="{{.ID}}"{{if eq .ID $in.ServedPartyID}} selected{{end}}>{{.Name}} ({{.Role}})</option>{{end}}</select></label>
+<label>Filing date <input type="date" name="filing_date" value="{{$in.FilingDate}}"></label>
+<button>Refresh values</button>
+</form>
+<form method="post" action="{{prefix}}/api/matters/{{$m.ID}}/generate">
+{{template "ctx" $c}}<input type="hidden" name="_return" value="/matter?matter_id={{$m.ID}}">
+{{with $in.TemplateID}}<input type="hidden" name="template_id" value="{{.}}">{{end}}{{with $in.PackageID}}<input type="hidden" name="package_id" value="{{.}}">{{end}}
+<input type="hidden" name="client_contact_id" value="{{$a.ClientContactID}}">
+<input type="hidden" name="served_party_id" value="{{$in.ServedPartyID}}">
+<input type="hidden" name="filing_date" value="{{$in.FilingDate}}">
+<table><thead><tr><th>Token</th><th>Value</th><th>Source</th></tr></thead><tbody>
+{{range $a.Tokens}}<tr><td><code>{{.Name}}</code></td>
+<td>{{if eq .Name "document_title"}}<input name="document_title" value="{{$in.DocumentTitle}}" placeholder="{{.Value}}">{{else if .NeedsInput}}<input name="values.{{.Name}}" required>{{else}}{{.Value}}{{end}}</td>
+<td>{{.Source}}</td></tr>{{end}}
+</tbody></table>
+<p><small>Typed values go into the drafts only. They are never stored by this module.</small></p>
+<button>Generate</button>
+</form>
+{{template "foot" .}}{{end}}
+
+{{define "drafts"}}{{template "head" .}}
+{{$c := .Context}}{{$d := .Data}}{{$g := .Grants}}{{$mid := ""}}{{with .Matter}}{{$mid = .ID}}{{end}}
+<p class="actions"><a href="{{link $c "/drafts" "matter_id" $mid}}"{{if eq $d.Status "draft"}} aria-current="page"{{end}}>Drafts</a> <a href="{{link $c "/drafts" "matter_id" $mid "status" "final"}}"{{if eq $d.Status "final"}} aria-current="page"{{end}}>Final</a></p>
+{{if not $d.Drafts}}<p>Nothing here.</p>{{else}}<table><thead><tr><th>File</th><th>Template</th><th>Generated</th><th>Status</th>{{if $g.DocTender}}<th>Doc Tender</th>{{end}}<th></th></tr></thead><tbody>
+{{range $d.Drafts}}<tr><td>{{.Name}}</td><td>{{.TemplateName}}</td><td>{{date .GeneratedAt}}</td><td><span class="tag">{{.Status}}</span></td>{{if $g.DocTender}}<td>{{.DocTender}}</td>{{end}}
+<td><button type="button" data-editor="{{.FileID}}">Open in editor</button>
+<form method="post" action="{{prefix}}/api/drafts/{{.FileID}}/status" class="inline">{{template "ctx" $c}}<input type="hidden" name="_return" value="/drafts?matter_id={{$mid}}{{if eq $d.Status "final"}}&status=final{{end}}">
+<input type="hidden" name="status" value="{{if eq $d.Status "final"}}draft{{else}}final{{end}}"><button>{{if eq $d.Status "final"}}Mark draft{{else}}Mark final{{end}}</button></form></td></tr>
+{{end}}</tbody></table>{{end}}
+{{template "foot" .}}{{end}}
+
+{{define "widget"}}<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Drafts</title><link rel="stylesheet" href="{{prefix}}/static/style.css"><script src="{{prefix}}/static/app.js" defer></script></head>
+<body class="widget">
+{{if not .Data.Drafts}}<p>No drafts in the last {{.Data.Days}} days.</p>{{else}}<ul>
+{{range .Data.Drafts}}<li><a href="{{draftsTab .MatterID}}" data-navigate="/modules/documents/tabs/drafts" data-matter="{{.MatterID}}">{{.Name}}</a> <small>{{.TemplateName}}</small></li>{{end}}
+</ul>{{end}}
+</body></html>{{end}}
+
+{{define "quick"}}{{template "head" .}}
+{{$c := .Context}}
+<form method="get" action="{{prefix}}/quick/new">{{template "ctx" $c}}<input type="search" name="q" value="{{.Data.Q}}" placeholder="Find a matter" aria-label="Find a matter"><button>Find</button></form>
+{{range .Data.Matters}}<p><a href="{{link $c "/matter/new" "matter_id" .ID}}">{{.Number}} {{.Name}}</a></p>{{else}}<p>No matters found.</p>{{end}}
+{{template "foot" .}}{{end}}

@@ -1,0 +1,177 @@
+{{define "templates"}}{{template "head" .}}
+{{$c := .Context}}{{$d := .Data}}
+<form method="get" action="{{prefix}}/templates" class="filters">
+{{template "ctx" $c}}
+<input type="search" name="q" value="{{$d.Query.Q}}" placeholder="Search name, topics, description, area" aria-label="Search">
+<select name="practice_area_id" aria-label="Practice area"><option value="">Any practice area</option>{{range $d.Areas}}<option value="{{.ID}}"{{if eq .ID $d.Query.PracticeAreaID}} selected{{end}}>{{.Name}}</option>{{end}}</select>
+<select name="doc_class" aria-label="Document class"><option value="">Any class</option>{{range $k := list "pleading" "letter" "estate" "other"}}<option value="{{$k}}"{{if eq $k $d.Query.DocClass}} selected{{end}}>{{$k}}</option>{{end}}</select>
+<select name="status" aria-label="Status"><option value="">Active</option><option value="archived"{{if eq $d.Query.Status "archived"}} selected{{end}}>Archived</option><option value="any"{{if eq $d.Query.Status "any"}} selected{{end}}>All</option></select>
+<button>Search</button>
+</form>
+<p class="actions"><a href="{{link $c "/templates/new"}}">New template</a> <a href="{{link $c "/templates/new" "mode" "blank"}}">New blank template</a>
+{{if .Viewer.admin}} <a href="{{link $c "/attorneys"}}">Attorney profiles</a> <a href="{{link $c "/release"}}">Release trashed files</a>{{end}}</p>
+
+<h2>Templates</h2>
+{{if not $d.Lib.Templates}}<p>No templates match.</p>{{else}}
+<table><thead><tr><th>Name</th><th>Class</th><th>Topics</th><th>Output</th><th>Status</th></tr></thead><tbody>
+{{range $d.Lib.Templates}}<tr{{if eq .ID $d.Selected}} class="selected"{{end}}><td><a href="{{link $c (print "/templates/" .ID)}}">{{.Name}}</a>{{if .AttorneyOnly}} <span class="tag">Attorney only</span>{{end}}<br><small>{{.Description}}</small></td><td>{{.DocClass}}</td><td>{{join .Topics ", "}}</td><td>{{if eq .Output "docx_and_pdf"}}DOCX and PDF{{else}}DOCX{{end}}</td><td>{{.Status}}</td></tr>
+{{end}}</tbody></table>{{end}}
+
+<h2>Packages</h2>
+{{if not $d.Lib.Packages}}<p>No packages.</p>{{else}}<ul>{{range $d.Lib.Packages}}<li><a href="{{link $c (print "/packages/" .ID)}}">{{.Name}}</a> ({{len .TemplateIDs}} templates){{if ne .Status "active"}} <span class="tag">{{.Status}}</span>{{end}}</li>{{end}}</ul>{{end}}
+<details><summary>New package</summary>
+<form method="post" action="{{prefix}}/api/packages">
+{{template "ctx" $c}}<input type="hidden" name="_return" value="/templates">
+<label>Name <input name="name" required></label>
+<label>Description <input name="description"></label>
+<fieldset><legend>Templates, in order</legend>
+{{range $d.Lib.Templates}}<label><input type="checkbox" name="template_ids" value="{{.ID}}"> {{.Name}}</label>{{end}}
+</fieldset>
+<fieldset><legend>Practice areas (none means every matter)</legend>
+{{range $d.Areas}}<label><input type="checkbox" name="practice_area_ids" value="{{.ID}}"> {{.Name}}</label>{{end}}
+</fieldset>
+<button>Save package</button>
+</form></details>
+
+<h2>Components</h2>
+{{if not $d.Lib.Components}}<p>No components.</p>{{else}}<ul>{{range $d.Lib.Components}}<li><a href="{{link $c (print "/components/" .ID)}}">{{.Name}}</a> ({{.Category}}){{if ne .Status "active"}} <span class="tag">{{.Status}}</span>{{end}}</li>{{end}}</ul>{{end}}
+<details><summary>New component</summary>
+<form method="post" action="{{prefix}}/api/components" enctype="multipart/form-data">
+{{template "ctx" $c}}<input type="hidden" name="_return" value="/templates">
+<label>Name <input name="name" required></label>
+<label>Kind <select name="category">{{range $k := list "caption" "signature" "certificate" "letterhead" "other"}}<option>{{$k}}</option>{{end}}</select></label>
+<label>Description <input name="description"></label>
+<label>DOCX <input type="file" name="file" accept=".docx"></label>
+<label><input type="checkbox" name="mode" value="blank"> Start blank instead</label>
+<button>Save component</button>
+</form></details>
+{{template "foot" .}}{{end}}
+
+{{define "template_new"}}{{template "head" .}}
+{{$c := .Context}}{{$d := .Data}}
+<form method="post" action="{{prefix}}/api/templates" enctype="multipart/form-data">
+{{template "ctx" $c}}<input type="hidden" name="_return" value="/templates">
+<input type="hidden" name="mode" value="{{$d.Mode}}">
+{{if eq $d.Mode "upload"}}<label>DOCX file <input type="file" name="file" accept=".docx" required></label><p><small>Only .docx. To use a DOC, ODT or RTF file, open it in the editor, which saves DOCX, then save that as a template.</small></p>
+{{else if eq $d.Mode "from_file"}}<input type="hidden" name="file_id" value="{{$d.FileID}}"><p>Copies the current version of {{$d.Source}}.</p>
+{{else}}<p>Starts from a blank document holding the document title token.</p>{{end}}
+{{template "template_fields" (fields .Grants $d.Areas $d.Categories nil)}}
+<button>Save template</button>
+</form>
+{{template "foot" .}}{{end}}
+
+{{define "template_fields"}}
+<label>Name <input name="name" value="{{with .T}}{{.Name}}{{end}}" required></label>
+<label>Document class <select name="doc_class">{{$cur := ""}}{{with .T}}{{$cur = .DocClass}}{{end}}{{range $k := list "pleading" "letter" "estate" "other"}}<option value="{{$k}}"{{if eq $k $cur}} selected{{end}}>{{$k}}</option>{{end}}</select></label>
+<label>Topics (comma separated) <input name="topics" value="{{with .T}}{{join .Topics ", "}}{{end}}"></label>
+<label>Description <input name="description" value="{{with .T}}{{.Description}}{{end}}"></label>
+<label>Output <select name="output"><option value="docx">DOCX</option>
+{{if .Grants.Editor}}<option value="docx_and_pdf"{{with .T}}{{if eq .Output "docx_and_pdf"}} selected{{end}}{{end}}>DOCX and PDF</option>{{else}}<option value="docx_and_pdf" disabled>DOCX and PDF (Needs the editor permission)</option>{{end}}
+</select></label>
+<label><input type="checkbox" name="attorney_only" value="true"{{with .T}}{{if .AttorneyOnly}} checked{{end}}{{end}}> Outputs are attorney only</label>
+{{if .Grants.DocTender}}<label>Category hint <select name="category_id"><option value="">None</option>{{$cat := ""}}{{with .T}}{{$cat = .CategoryID}}{{end}}{{range .Categories}}<option value="{{.ID}}"{{if eq .ID $cat}} selected{{end}}>{{.Key}}</option>{{end}}</select></label>{{end}}
+<fieldset><legend>Practice areas (none means every matter)</legend>
+{{$t := .T}}{{range $a := .Areas}}<label><input type="checkbox" name="practice_area_ids" value="{{$a.ID}}"{{with $t}}{{if has .PracticeAreaIDs $a.ID}} checked{{end}}{{end}}> {{$a.Name}}</label>{{end}}
+</fieldset>
+{{end}}
+
+{{define "template"}}{{template "head" .}}
+{{$c := .Context}}{{$d := .Data}}{{$t := $d.T}}
+<p>{{if eq $t.Status "active"}}<span class="tag">Active</span>{{else}}<span class="tag">Archived</span>{{end}}
+<button type="button" data-editor="{{$t.BodyFileID}}">Edit body</button></p>
+<h2>Check template</h2>
+{{with $d.Check}}
+<p>Tokens filled from records: {{range $i, $k := .Known}}{{if $i}}, {{end}}<code>{{$k.Name}}</code> ({{$k.Source}}){{else}}none{{end}}</p>
+<p>Tokens typed on the form: {{range $i, $k := .Manual}}{{if $i}}, {{end}}<code>{{$k}}</code>{{else}}none{{end}}</p>
+{{if .Problems}}<ul class="problems">{{range .Problems}}<li>{{.}}</li>{{end}}</ul>{{end}}
+{{if .Slots}}<h3>Slots</h3>
+<form method="post" action="{{prefix}}/api/templates/{{$t.ID}}/slots">
+{{template "ctx" $c}}<input type="hidden" name="_return" value="/templates/{{$t.ID}}">
+{{range .Slots}}{{$slot := .}}<label>{{.Slot}} <select name="slots.{{.Slot}}"><option value="">Not mapped</option>{{range $d.Components}}<option value="{{.ID}}"{{if eq .ID $slot.ComponentID}} selected{{end}}>{{.Name}}</option>{{end}}</select></label>{{end}}
+<button>Save slots</button>
+</form>{{end}}
+{{end}}
+<h2>Details</h2>
+<form method="post" action="{{prefix}}/api/templates/{{$t.ID}}">
+{{template "ctx" $c}}<input type="hidden" name="_return" value="/templates/{{$t.ID}}">
+{{template "template_fields" (fields .Grants $d.Areas $d.Categories $t.Template)}}
+<button>Save details</button>
+</form>
+<form method="post" action="{{prefix}}/api/templates/{{$t.ID}}/{{if eq $t.Status "active"}}archive{{else}}unarchive{{end}}">
+{{template "ctx" $c}}<input type="hidden" name="_return" value="/templates/{{$t.ID}}">
+<button>{{if eq $t.Status "active"}}Archive{{else}}Unarchive{{end}}</button>
+</form>
+<h2>Versions</h2>
+<table><thead><tr><th>Version</th><th>Saved by</th><th>How</th><th>When</th></tr></thead><tbody>
+{{range $t.Versions}}<tr><td>v{{.Number}}</td><td>{{.SavedBy}}</td><td>{{.How}}</td><td>{{.CreatedAt}}</td></tr>{{end}}
+</tbody></table>
+<p><small>Restore a version from the file's own page in Togavsu.</small></p>
+{{template "foot" .}}{{end}}
+
+{{define "component"}}{{template "head" .}}
+{{$c := .Context}}{{$d := .Data}}
+<p>{{$d.C.Category}} <span class="tag">{{$d.C.Status}}</span> <button type="button" data-editor="{{$d.C.BodyFileID}}">Edit body</button></p>
+<form method="post" action="{{prefix}}/api/components/{{$d.C.ID}}">
+{{template "ctx" $c}}<input type="hidden" name="_return" value="/components/{{$d.C.ID}}">
+<label>Name <input name="name" value="{{$d.C.Name}}" required></label>
+<label>Kind <select name="category">{{range $k := list "caption" "signature" "certificate" "letterhead" "other"}}<option{{if eq $k $d.C.Category}} selected{{end}}>{{$k}}</option>{{end}}</select></label>
+<label>Description <input name="description" value="{{$d.C.Description}}"></label>
+<button>Save</button>
+</form>
+<form method="post" action="{{prefix}}/api/components/{{$d.C.ID}}/{{if eq $d.C.Status "active"}}archive{{else}}unarchive{{end}}">
+{{template "ctx" $c}}<input type="hidden" name="_return" value="/components/{{$d.C.ID}}">
+<button>{{if eq $d.C.Status "active"}}Archive{{else}}Unarchive{{end}}</button>
+</form>
+<h2>Versions</h2>
+<ul>{{range $d.Versions}}<li>v{{.Number}} {{.How}} {{.CreatedAt}}</li>{{end}}</ul>
+{{template "foot" .}}{{end}}
+
+{{define "package"}}{{template "head" .}}
+{{$c := .Context}}{{$d := .Data}}
+<p><span class="tag">{{$d.P.Status}}</span> {{$d.P.Description}}</p>
+<ol>{{range $d.Members}}<li>{{.Name}}{{if ne .Status "active"}} <span class="tag">archived</span>{{end}}</li>{{end}}</ol>
+<form method="post" action="{{prefix}}/api/packages/{{$d.P.ID}}">
+{{template "ctx" $c}}<input type="hidden" name="_return" value="/packages/{{$d.P.ID}}">
+<label>Name <input name="name" value="{{$d.P.Name}}" required></label>
+<label>Description <input name="description" value="{{$d.P.Description}}"></label>
+<label>Templates in order (ids, comma separated) <input name="template_ids" value="{{$d.IDs}}"></label>
+<button>Save</button>
+</form>
+<form method="post" action="{{prefix}}/api/packages/{{$d.P.ID}}/{{if eq $d.P.Status "active"}}archive{{else}}unarchive{{end}}">
+{{template "ctx" $c}}<input type="hidden" name="_return" value="/packages/{{$d.P.ID}}">
+<button>{{if eq $d.P.Status "active"}}Archive{{else}}Unarchive{{end}}</button>
+</form>
+<h2>Templates</h2>
+<ul>{{range $d.All}}<li><code>{{.ID}}</code> {{.Name}}</li>{{end}}</ul>
+{{template "foot" .}}{{end}}
+
+{{define "search"}}{{template "head" .}}
+{{$c := .Context}}
+<form method="get" action="{{prefix}}/search">{{template "ctx" $c}}<input type="search" name="q" value="{{.Data.Q}}" aria-label="Search"><button>Search</button></form>
+{{range .Data.Templates}}<p><a href="{{link $c (print "/templates/" .ID)}}">{{.Name}}</a><br><small>{{.Description}}</small></p>{{else}}<p>No templates match.</p>{{end}}
+{{template "foot" .}}{{end}}
+
+{{define "attorneys"}}{{template "head" .}}
+{{$c := .Context}}
+<p>Bar number, bar state, courtesy title and signature line fill the attorney tokens. A courtesy title is never guessed; with none typed, the courtesy name is typed on the form.</p>
+{{range .Data}}<form method="post" action="{{prefix}}/api/attorneys/{{.UserID}}" class="row">
+{{template "ctx" $c}}<input type="hidden" name="_return" value="/attorneys">
+<strong>{{.Name}}</strong>
+<label>Bar number <input name="bar_number" value="{{.BarNumber}}"></label>
+<label>Bar state <input name="bar_state" value="{{.BarState}}" maxlength="2" size="3"></label>
+<label>Courtesy title <input name="courtesy_title" value="{{.CourtesyTitle}}"></label>
+<label>Signature line <input name="signature_line" value="{{.SignatureLine}}"></label>
+<button>Save</button>
+</form>{{else}}<p>No active attorneys.</p>{{end}}
+{{template "foot" .}}{{end}}
+
+{{define "release"}}{{template "head" .}}
+{{$c := .Context}}
+<p>The core can't purge a trashed file while this module points at it. Release drops the module's hold. Releasing a template or component body deletes that template or component.</p>
+{{range .Data}}<form method="post" action="{{prefix}}/api/release/{{.FileID}}" class="row">
+{{template "ctx" $c}}<input type="hidden" name="_return" value="/release">
+<strong>{{.Name}}</strong> ({{join .Kinds ", "}})
+{{if .ConfirmName}}<label>Type {{.ConfirmName}} to confirm <input name="confirm_name" required></label>{{end}}
+<button>Release</button>
+</form>{{else}}<p>No trashed files are held.</p>{{end}}
+{{template "foot" .}}{{end}}

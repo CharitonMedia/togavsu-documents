@@ -1,0 +1,228 @@
+# Documents and templates: the firm's template library, token-filled drafts and whole
+# document packages on a matter, matter zips, and version notes, compare and copy.
+id: documents
+name: Documents and templates
+version: "1.0.0"
+author: Chariton Media
+homepage: https://github.com/CharitonMedia/togavsu-documents
+license: Same as Togavsu
+price: Free
+container:
+  image: ghcr.io/charitonmedia/togavsu-documents
+  digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+  port: 8080
+  events: /events
+permissions:
+  - scope: matters:read
+    reason: Read the matter, its parties and its custom fields to fill template tokens.
+  - scope: contacts:read
+    reason: Read party names and current addresses to fill template tokens.
+  - scope: files:read
+    reason: Read template bodies, list a matter's files and versions, download versions and Markdown copies for zips and compare.
+  - scope: files:write
+    reason: Store templates as library files, publish generated drafts, mark draft or final, add version copies.
+  - scope: settings:read
+    reason: Read county names, practice areas, party roles and custom field definitions for tokens and filters.
+  - scope: firm:read
+    reason: Fill firm name, address, phone, email and website tokens, and dates in the firm's time zone.
+  - scope: users:directory
+    reason: Fill the responsible attorney's name and list attorneys for attorney profiles.
+  - scope: events:read
+    reason: Hear when a generated or template file changes status or goes to the trash.
+  - scope: events:write
+    reason: Write one timeline line per generation run and per bulk download.
+  - scope: editor:run
+    required: false
+    reason: Make a PDF beside a generated draft. Without it, output is DOCX only.
+  - scope: doc_tender:read
+    required: false
+    reason: Offer a category hint per template and show Doc Tender status on generated drafts.
+widgets:
+  - id: drafts
+    title: Generated drafts
+    path: /widget/drafts
+    size:
+      w: 4
+      h: 3
+    sizes:
+      - w: 4
+        h: 3
+      - w: 6
+        h: 4
+    roles: [admin, attorney, staff]
+    target:
+      tab: drafts
+      params: [matter_id]
+tabs:
+  - id: templates
+    title: Templates
+    placement: home
+    path: /templates
+  - id: drafts
+    title: Generated drafts
+    placement: home
+    path: /drafts
+  - id: matter
+    title: Templates and downloads
+    placement: matter
+    path: /matter
+matter_items:
+  - id: new-from-template
+    kind: action
+    title: New from template
+    path: /matter/new
+  - id: download-all
+    kind: action
+    title: Download files as zip
+    path: /matter/download
+  - id: version-tools
+    kind: action
+    title: Version tools
+    path: /matter/versions
+  - id: recent-generated
+    kind: panel
+    title: Recently generated
+    path: /matter/recent
+sidebar:
+  - id: templates
+    title: Templates
+    path: /templates
+    section: documents
+    icon: file
+    order: 200
+quick_create:
+  - id: from-template
+    title: Document from template
+    path: /quick/new
+search_scopes:
+  - id: templates
+    title: Templates
+    path: /search
+help:
+  heading: Documents and templates
+  pages:
+    - id: overview
+      title: Documents and templates
+      keywords: [template, assemble, generate]
+      covers: [/modules/documents/tabs/templates]
+      body: |
+        Keep the firm's templates and components in one library and generate filled drafts on any matter.
+
+        **Where it is:** sidebar, Documents, **Templates**. The **Templates** tab lists active templates, packages and components. Search by name, topic, description or practice area, and filter by practice area and document class.
+
+        - **New template:** upload a DOCX, start a blank one, or use **Version tools > Save as template** on any file you can read. Only DOCX files can be templates; open a DOC, ODT or RTF in the editor, save it, and save that as a template.
+        - **Edit body** opens the template in the editor. Each save adds a version, listed newest first on the template page. Editing the name, topics or practice areas adds no version.
+        - **Archive** takes a template, package or component out of every picker; its file and history stay.
+        - **Attorney profiles** (admins) and **Release** (admins) are linked from the Templates tab.
+
+        Every action is also a JSON endpoint under `/m/documents/api/`, described at `/m/documents/api/openapi.json`, for agents with a context token.
+    - id: tokens
+      title: Template tokens and slots
+      keywords: [token, merge field, slot, component]
+      covers: [/modules/documents/tabs/templates]
+      body: |
+        Tokens such as {{client_full_name}} fill from the matter, its parties and the firm; slots pull in a shared component.
+
+        **Where it is:** **Templates**, open a template, **Check template**.
+
+        - A token is a lower-case name in double braces: `{{matter_number}}`, `{{client_full_name}}`, `{{firm_name}}`, `{{attorney_bar_number}}`, `{{today_long}}`, `{{filing_date_long}}`, `{{matter_cf_<key>}}` and `{{client_cf_<key>}}`.
+        - Any other token is a manual fill: you type it on the assemble form. Nothing ships while a token is unfilled.
+        - A slot is a paragraph holding only `{{slot:caption}}`. Map each slot to a component (caption, signature block, certificate of service, letterhead). A component can't hold pictures, hyperlinks, footnotes, endnotes, comments, numbered lists or other linked parts.
+        - **Check template** lists every known token, every manual token, every slot and every component problem.
+    - id: generate
+      title: Generate a document or package
+      keywords: [generate, package, draft]
+      covers: [/modules/documents/tabs/matter, documents.drafts, /modules/documents/tabs/drafts]
+      body: |
+        Pick one template or a package on the matter, review the filled values, and generate drafts into the matter's files.
+
+        **Where it is:** on a matter, **New from template**; or **Quick create > Document from template**, then pick the matter.
+
+        1. Pick a template or a package. The list shows items for the matter's practice area and items that name none.
+        2. The form shows each token, its value and where it came from. Type a value for each token it couldn't fill. With two clients on the matter, pick which client fills the client tokens.
+        3. **Generate** makes new draft files on the matter. A package publishes all of its documents or none of them.
+        4. Find them on **Generated drafts**: **Open in editor**, **Mark final**, or under the **Final** filter, **Mark draft**. With PDF output, a failed PDF shows **Retry PDF** on the run.
+    - id: zip
+      title: Download files as a zip
+      keywords: [zip, bulk, download]
+      covers: [/modules/documents/tabs/matter]
+      body: |
+        Download a matter's files, or a folder of them, as one zip, in folders or flat.
+
+        **Where it is:** on a matter, **Download files as zip**, or the **Templates and downloads** tab.
+
+        - Choose the whole matter, one folder or a selection, a status and category filter, current or all versions, Markdown copies on or off, and folders or flat.
+        - When a chosen version is quarantined, choose **Include after confirming** or **Leave them out**.
+        - The zip is named `<matter number>-documents-<date>.zip`. The module keeps a record of every entry, and the matter timeline gets one line.
+    - id: versions
+      title: Version notes, compare and copy
+      keywords: [version, compare, diff, note]
+      covers: [/modules/documents/tabs/matter]
+      body: |
+        Add a note to a version, compare two versions side by side, or copy an older version back as the newest.
+
+        **Where it is:** on a matter, **Version tools**, then pick a file.
+
+        - **Note and label:** one note and a label (sent, signed, filed, reviewed, other) per version.
+        - **Compare:** pick two versions; added and removed lines are marked. A version without a Markdown copy shows "Markdown copy not ready".
+        - **Copy as new file:** copies one version into a new file on the matter, named "<name> (from v<n>)".
+        - **Save as template:** copies the current version into the template library.
+    - id: attorneys
+      title: Attorney profiles
+      keywords: [bar number, signature]
+      covers: [/modules/documents/tabs/templates]
+      body: |
+        Admins keep each attorney's bar number, bar state, courtesy title and signature line for signature blocks.
+
+        **Where it is:** **Templates > Attorney profiles** (admins only).
+
+        - Each attorney's bar number, bar state, courtesy title and signature line fill the `{{attorney_bar_number}}`, `{{attorney_bar_state}}`, `{{attorney_courtesy_name}}` and `{{attorney_signature_line}}` tokens.
+        - The courtesy title is only what you type; with none, `{{attorney_courtesy_name}}` is typed on the assemble form.
+events: [file.updated, file.trashed]
+data:
+  extends:
+    - name: generated
+      record: file
+      table: generated_files
+      key: file_id
+      columns:
+        - name: template_id
+        - name: run_id
+        - name: template_version_number
+    - name: attorney
+      record: user
+      table: attorney_profiles
+      key: user_id
+      columns:
+        - name: bar_number
+        - name: bar_state
+        - name: courtesy_title
+        - name: signature_line
+  views:
+    - name: generated_documents
+      record: file
+      key: file_id
+      columns:
+        - name: template_id
+        - name: template_name
+        - name: run_id
+        - name: template_version_number
+settings:
+  - key: default_output
+    label: Output for new templates
+    type: enum
+    options: [docx, docx_and_pdf]
+    default: docx
+  - key: max_package_templates
+    label: Most templates in one package
+    type: int
+    default: "25"
+  - key: zip_layout
+    label: Zip layout
+    type: enum
+    options: [folders, flat]
+    default: folders
+  - key: drafts_window_days
+    label: Days of generated drafts the widget shows
+    type: int
+    default: "30"
