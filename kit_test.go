@@ -2,40 +2,12 @@ package documents
 
 import (
 	"crypto/ed25519"
-	"regexp"
 	"strings"
 	"testing"
 
+	"github.com/CharitonMedia/togavsu-documents/internal/pending"
 	"github.com/CharitonMedia/togavsu/pkg/modulekit"
 )
-
-// pendingCore is the package as the pinned core can install it today: the manifest
-// without the fields and scopes whose CORE items haven't landed. The shipped manifest
-// keeps them, as the spec's section 3 writes it:
-//
-//   - CORE-08: sidebar entries' section, icon and order.
-//   - CORE-18: the firm:read scope.
-//   - CORE-19: the users:directory scope.
-func pendingCore(files map[string][]byte) map[string][]byte {
-	out := map[string][]byte{}
-	for k, v := range files {
-		out[k] = v
-	}
-	m := string(out[modulekit.ManifestFile])
-	for _, re := range pendingFields {
-		m = re.ReplaceAllString(m, "")
-	}
-	out[modulekit.ManifestFile] = []byte(m)
-	return out
-}
-
-var pendingFields = []*regexp.Regexp{
-	regexp.MustCompile(`(?m)^    (section|icon|order): .*\n`),
-	regexp.MustCompile(`(?m)^  - scope: (firm:read|users:directory)\n    reason: .*\n`),
-}
-
-// pendingItems names the CORE items pendingCore stands in for.
-const pendingItems = "needs CORE-08 (sidebar section, icon, order), CORE-18 (firm:read) and CORE-19 (users:directory)"
 
 // files is the shipped package, read the way the kit reads a package directory.
 func files(t *testing.T) map[string][]byte {
@@ -65,7 +37,7 @@ func installable(t *testing.T) map[string][]byte {
 	if _, _, err := modulekit.Check(f); err == nil {
 		return f
 	}
-	return pendingCore(f)
+	return pending.Strip(f)
 }
 
 // The package passes the core's own install checks (MOD-DOC-01's package half).
@@ -73,10 +45,10 @@ func TestPackageCheck(t *testing.T) {
 	f := files(t)
 	pkg, ms, err := modulekit.Check(f)
 	if err != nil {
-		if _, _, perr := modulekit.Check(pendingCore(f)); perr != nil {
+		if _, _, perr := modulekit.Check(pending.Strip(f)); perr != nil {
 			t.Fatalf("check: %v; without the pending fields: %v", err, perr)
 		}
-		t.Skipf("%s: %v", pendingItems, err)
+		t.Skipf("%s: %v", pending.Items, err)
 	}
 	if pkg.Manifest.ID != ID || pkg.Manifest.Version != Version || len(ms) != 6 {
 		t.Fatalf("checked %s %s with %d migrations", pkg.Manifest.ID, pkg.Manifest.Version, len(ms))
