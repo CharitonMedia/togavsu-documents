@@ -49,10 +49,9 @@ attorneys.go          attorney profiles
 events.go             webhook, Release
 routes.go, pages.go   route table, OpenAPI, page handlers
 pages/                html/template pages, one stylesheet, one script
-package/              togavsu-module.yaml and migrations 0001 to 0006
+package/              togavsu-module.yaml, migrations 0001 to 0006, pending.yaml
 internal/fakecore/    in-memory core for tests
 internal/modkit/      context and webhook headers, webhook signatures
-internal/pending/     the manifest the pinned core installs today (tests only)
 acceptance/           acceptance suite on the real core (pkg/modulekit/coretest)
 ```
 
@@ -77,14 +76,18 @@ CI they skip without it, and in CI they fail without it.
 - The root package's `*_pg_test.go` run the module against the fake core in
   `internal/fakecore`, in their own database `togavsu_documents`.
 
-The shipped manifest carries the CORE-08 sidebar fields (section, icon, order) the spec
-asks for, which the pinned core's install checks refuse, so `togavsu-module check
-package` and `documents package` refuse it until CORE-08 lands. `internal/pending` lists
-those fields in one place; the tests check, sign and install the package without them,
-and `TestPackageCheck` fails as soon as the core accepts one. The source passes the
-core's settings check (`modulekit.CheckSource`, in `TestCheckSource`): small fixed
-numbers are spelled as arithmetic in `fixed.go`, as the core's matter-clock does, and
-tunables are module settings.
+The shipped manifest carries every part the spec asks for. Parts the pinned core
+doesn't accept yet are listed in `package/pending.yaml`, each with its CORE item: the
+sidebar entry's `section`, `icon` and `order` (CORE-08) and the `firm:read` (CORE-18) and
+`users:directory` (CORE-19) scopes. The kit's `modulekit.Installable` holds back each
+listed part the core refuses and keeps it once the core accepts it, so nothing is edited
+when an item lands; `pending.yaml` itself never ships. `TestPackageCheck` and the
+package command's `TestBuild` fail when the core refuses a part `pending.yaml` doesn't
+list, and when an entry holds nothing back (its item has landed: delete the entry).
+
+The source passes the core's settings check (`modulekit.CheckSource`, in
+`TestCheckSource`): small fixed numbers are spelled as arithmetic in `fixed.go`, as the
+core's matter-clock does, and tunables are module settings.
 
 ## Run
 
@@ -98,11 +101,21 @@ Secrets come from the Docker secrets the core hands the supervisor: `togavsu_api
 
 ## Package and sign
 
-`documents package -key <file> -out documents.signed.json` runs the core's install
-checks through `pkg/modulekit`, archives the package, signs it with the base64 Ed25519
-seed in the key file and prints the PEM public key the admin trusts. It never makes or
-keeps a key. The image digest in `package/togavsu-module.yaml` is a placeholder the
-release workflow pins.
+`documents package -key <file> -out documents.signed.json` builds the package with
+`modulekit.BuildInstallable`: it holds back the `pending.yaml` parts the pinned core
+refuses, runs the core's install checks on the rest, archives it and signs it with the
+base64 Ed25519 seed in the key file. It refuses to sign when the core refuses anything
+`pending.yaml` doesn't cover. On stderr it prints one line per held-back part with its
+CORE item, and one per entry that holds nothing back; on stdout, the PEM public key the
+admin trusts. The kit's command does the same:
+
+```
+go run github.com/CharitonMedia/togavsu/cmd/togavsu-module check -installable package
+go run github.com/CharitonMedia/togavsu/cmd/togavsu-module package -installable -dir package -key <file> -out documents.signed.json
+```
+
+Neither makes or keeps a key; the tests sign with a key generated at run time. The image
+digest in `package/togavsu-module.yaml` is a placeholder the release workflow pins.
 
 ## License
 

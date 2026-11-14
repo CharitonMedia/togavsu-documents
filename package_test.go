@@ -35,7 +35,7 @@ func TestPackageFiles(t *testing.T) {
 		names = append(names, n)
 	}
 	sort.Strings(names)
-	want := "migrations/0001_library.sql migrations/0002_generation.sql migrations/0003_downloads.sql migrations/0004_versions.sql migrations/0005_profiles_events.sql migrations/0006_views.sql togavsu-module.yaml"
+	want := "migrations/0001_library.sql migrations/0002_generation.sql migrations/0003_downloads.sql migrations/0004_versions.sql migrations/0005_profiles_events.sql migrations/0006_views.sql pending.yaml togavsu-module.yaml"
 	if got := strings.Join(names, " "); got != want {
 		t.Fatalf("package files:\n%s\nwant\n%s", got, want)
 	}

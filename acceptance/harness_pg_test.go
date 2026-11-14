@@ -16,7 +16,6 @@ import (
 	"testing"
 
 	documents "github.com/CharitonMedia/togavsu-documents"
-	"github.com/CharitonMedia/togavsu-documents/internal/pending"
 	"github.com/CharitonMedia/togavsu/pkg/modulekit"
 	"github.com/CharitonMedia/togavsu/pkg/modulekit/coretest"
 )
@@ -76,7 +75,7 @@ func newKit(t *testing.T) *kit {
 		t.Fatal(err)
 	}
 	k.priv = priv
-	k.signed, err = modulekit.Build(priv, installable(t))
+	k.signed, _, err = modulekit.BuildInstallable(priv, shipped(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,8 +150,15 @@ func (k *kit) needs(items ...string) {
 func (k *kit) landed(item string) bool {
 	switch item {
 	case "CORE-08":
-		_, _, err := modulekit.Check(shipped(k.t))
-		return err == nil
+		// The sidebar fields pending.yaml lists for CORE-08 install once nothing holds
+		// them back.
+		_, held := installable(k.t)
+		for _, h := range held {
+			if h.Pending.Core == item {
+				return false
+			}
+		}
+		return true
 	case "CORE-18":
 		return k.has("GET", "/api/v1/firm-profile")
 	case "CORE-19":
@@ -189,10 +195,15 @@ func shipped(t *testing.T) map[string][]byte {
 	return f
 }
 
-// installable is the shipped package without the fields internal/pending lists.
-func installable(t *testing.T) map[string][]byte {
+// installable is the shipped package as the pinned core installs it, without the parts
+// package/pending.yaml lists that the core refuses, and the parts it held back.
+func installable(t *testing.T) (map[string][]byte, []modulekit.Held) {
 	t.Helper()
-	return pending.Strip(shipped(t))
+	out, held, err := modulekit.Installable(shipped(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out, held
 }
 
 // --- Calling the module as a viewer, through the core's /m/ route ---

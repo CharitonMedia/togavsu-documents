@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	documents "github.com/CharitonMedia/togavsu-documents"
-	"github.com/CharitonMedia/togavsu-documents/internal/pending"
 	"github.com/CharitonMedia/togavsu/pkg/modulekit"
 	"github.com/CharitonMedia/togavsu/pkg/modulekit/coretest"
 )
@@ -57,7 +56,8 @@ func TestMODDOC01Install(t *testing.T) {
 	if len(k.Runtime.Deployments()) != 0 || k.SchemaExists(documents.ID) {
 		t.Fatal("the module ran before approval")
 	}
-	m, err := modulekit.ParseManifest(installable(t)[modulekit.ManifestFile])
+	f, _ := installable(t)
+	m, err := modulekit.ParseManifest(f[modulekit.ManifestFile])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,28 +114,6 @@ func TestMODDOC01Install(t *testing.T) {
 			t.Fatal("a cancelled module issues context tokens")
 		}
 	})
-
-	// Each scope internal/pending holds back is refused at approval until its CORE
-	// item lands; then this fails and names it.
-	for i := range pending.Fields {
-		p := &pending.Fields[i]
-		if p.Refused != pending.AtApproval {
-			continue
-		}
-		t.Run(p.Name+" refused at approval", func(t *testing.T) {
-			k := newKit(t)
-			signed, err := modulekit.Build(k.priv, pending.StripBut(shipped(t), p))
-			if err != nil {
-				t.Fatal(err)
-			}
-			k.Install(signed)
-			if r := k.decide(); r.Code == http.StatusOK {
-				t.Errorf("the core now accepts the %s (%s): delete its row in internal/pending", p.Name, p.Item)
-			} else {
-				t.Logf("%s (%s): %d %s", p.Name, p.Item, r.Code, strings.TrimSpace(r.Body))
-			}
-		})
-	}
 
 	// The rest needs what the pinned core lacks: every gap is named in one skip.
 	var gaps []string

@@ -1,0 +1,19 @@
+# pending.yaml: parts of this package that wait on a core change (docs/SPEC.md section 9).
+# The kit's Installable holds back each part the pinned core refuses and keeps it once the
+# core accepts it; this file never ships.
+pending:
+  - field: sidebar[*].section
+    core: CORE-08
+    reason: Files the Templates entry under the Documents section of the sidebar.
+  - field: sidebar[*].icon
+    core: CORE-08
+    reason: Shows the file icon on the Templates sidebar entry.
+  - field: sidebar[*].order
+    core: CORE-08
+    reason: Places the Templates entry at order 200 within its sidebar section.
+  - scope: firm:read
+    core: CORE-18
+    reason: Fills firm name, address, phone, email and website tokens, and dates in the firm's time zone.
+  - scope: users:directory
+    core: CORE-19
+    reason: Fills the responsible attorney's name and lists attorneys for attorney profiles.

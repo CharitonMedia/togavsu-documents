@@ -7,10 +7,13 @@
 // togavsu_api_token, togavsu_webhook_secret, togavsu_db_role, togavsu_db_password and
 // togavsu_db_schema.
 //
-// The package command runs the core's own install checks on the package (pkg/modulekit),
-// refuses to sign a package they refuse, archives it, signs it with the base64 Ed25519
-// seed in the key file and prints the PEM public key the admin trusts. It never makes or
-// stores a key.
+// The package command builds the installable package with the core's own code
+// (modulekit.BuildInstallable): it holds back each part package/pending.yaml lists that
+// the pinned core refuses, runs the install checks on the rest, refuses to sign a package
+// they refuse or one with a refusal pending.yaml doesn't cover, archives it and signs it
+// with the base64 Ed25519 seed in the key file. It prints each held-back part with its
+// CORE item, each pending entry that holds nothing back, and the PEM public key the admin
+// trusts. It never makes or stores a key.
 package main
 
 import (
@@ -111,9 +114,12 @@ func pack(args []string) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	signed, err := build(priv, files)
+	signed, notes, err := build(priv, files)
 	if err != nil {
 		log.Fatal(err)
+	}
+	for _, n := range notes {
+		fmt.Fprintln(os.Stderr, n)
 	}
 	if err := writeFile(*out, signed); err != nil {
 		log.Fatal(err)
@@ -121,12 +127,30 @@ func pack(args []string) {
 	fmt.Printf("wrote %s\n%s", *out, modulekit.PublicKeyPEM(priv.Public().(ed25519.PublicKey)))
 }
 
-// build runs the install checks on files, then archives and signs them.
-func build(priv ed25519.PrivateKey, files map[string][]byte) ([]byte, error) {
-	if _, _, err := modulekit.Check(files); err != nil {
-		return nil, err
+// build holds back the pending parts the core refuses, runs the install checks on the
+// rest, archives and signs it. notes is one line per held-back part and one per pending
+// entry that held nothing back (its CORE item has landed, or the package lost the part).
+func build(priv ed25519.PrivateKey, files map[string][]byte) (signed []byte, notes []string, err error) {
+	signed, held, err := modulekit.BuildInstallable(priv, files)
+	if err != nil {
+		return nil, nil, err
 	}
-	return modulekit.Build(priv, files)
+	for _, h := range held {
+		notes = append(notes, h.String())
+	}
+	for _, e := range unused(files, held) {
+		notes = append(notes, "pending "+e.Part()+" ("+e.Core+") holds nothing back: delete its entry in package/pending.yaml")
+	}
+	return signed, notes, nil
+}
+
+// unused is the pending entries that held nothing back.
+func unused(files map[string][]byte, held []modulekit.Held) []modulekit.Pending {
+	entries, err := modulekit.ParsePending(files[modulekit.PendingFile])
+	if err != nil {
+		return nil
+	}
+	return modulekit.Unused(entries, held)
 }
 
 // writeFile writes b to a new or truncated file with the usual 0666-before-umask mode.

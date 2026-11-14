@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/CharitonMedia/togavsu-documents/internal/pending"
 	"github.com/CharitonMedia/togavsu/pkg/modulekit"
 )
 
@@ -33,45 +32,46 @@ func files(t *testing.T) map[string][]byte {
 	return f
 }
 
-// installable is the shipped package without the pending fields: what the pinned core
-// installs today.
-func installable(t *testing.T) map[string][]byte {
+// installable is the shipped package as the pinned core installs it: modulekit.Installable
+// holds back each part package/pending.yaml lists that the core refuses.
+func installable(t *testing.T) (map[string][]byte, []modulekit.Held) {
 	t.Helper()
-	return pending.Strip(files(t))
+	out, held, err := modulekit.Installable(files(t))
+	if err != nil {
+		t.Fatalf("package/pending.yaml doesn't cover every refusal of the pinned core: %v", err)
+	}
+	return out, held
 }
 
-// The package passes the core's own install checks once the pending fields are out
-// (MOD-DOC-01's package half), and the shipped manifest is refused for those fields and
-// nothing else: each field the checks refuse is refused alone, each scope refused only
-// at approval passes them, and no field matches twice. When the core accepts a field
-// this fails and names it, and the field leaves internal/pending.
+// The package passes the core's own install checks once the pending parts the core
+// refuses are held back (MOD-DOC-01's package half), and package/pending.yaml lists those
+// parts and nothing else: a refusal it misses fails installable, and an entry that holds
+// nothing back (its CORE item has landed) fails here and names the entry to delete.
 func TestPackageCheck(t *testing.T) {
 	f := files(t)
-	pkg, ms, err := modulekit.Check(installable(t))
+	out, held := installable(t)
+	if _, ok := out[modulekit.PendingFile]; ok {
+		t.Fatal("the installable package ships pending.yaml")
+	}
+	if refs := modulekit.CheckAll(out); len(refs) != 0 {
+		t.Fatalf("the installable package is refused: %v", refs)
+	}
+	pkg, ms, err := modulekit.Check(out)
 	if err != nil {
-		t.Fatalf("check without the pending fields: %v", err)
+		t.Fatal(err)
 	}
 	if pkg.Manifest.ID != ID || pkg.Manifest.Version != Version || len(ms) != 6 {
 		t.Fatalf("checked %s %s with %d migrations", pkg.Manifest.ID, pkg.Manifest.Version, len(ms))
 	}
-	if _, _, err := modulekit.Check(f); err == nil {
-		t.Errorf("the core accepts the shipped manifest: every field in internal/pending has landed; empty pending.Fields")
+	entries, err := modulekit.ParsePending(f[modulekit.PendingFile])
+	if err != nil {
+		t.Fatal(err)
 	}
-	for i := range pending.Fields {
-		p := &pending.Fields[i]
-		if n := len(p.Lines.FindAllString(string(f[pending.ManifestFile]), -1)); n != 1 {
-			t.Errorf("%s (%s) matches %d places in the shipped manifest, want 1", p.Name, p.Item, n)
-			continue
-		}
-		_, _, err := modulekit.Check(pending.StripBut(f, p))
-		switch {
-		case p.Refused == pending.AtCheck && err == nil:
-			t.Errorf("the core now accepts the %s (%s): ship it and delete its row in internal/pending", p.Name, p.Item)
-		case p.Refused == pending.AtCheck:
-			t.Logf("%s (%s) refused: %v", p.Name, p.Item, err)
-		case err != nil:
-			t.Errorf("the %s (%s) is listed as refused at approval, but the install checks refuse it: %v", p.Name, p.Item, err)
-		}
+	for _, e := range modulekit.Unused(entries, held) {
+		t.Errorf("pending %s (%s) holds nothing back: the core accepts it; delete its entry in package/pending.yaml", e.Part(), e.Core)
+	}
+	for _, h := range held {
+		t.Log(h.String())
 	}
 }
 
@@ -79,7 +79,7 @@ func TestPackageCheck(t *testing.T) {
 // CheckPackage on the installable tar, and VerifyFile on the signed file with a
 // throwaway key. A tampered package or an untrusted signer is refused.
 func TestBuildSignVerify(t *testing.T) {
-	f := installable(t)
+	f, _ := installable(t)
 	if _, _, err := modulekit.Check(f); err != nil {
 		t.Fatalf("check: %v", err)
 	}
