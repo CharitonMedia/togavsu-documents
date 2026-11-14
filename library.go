@@ -107,12 +107,18 @@ func (s *Server) now() int64 { return s.c.Now().Unix() }
 
 // Reads.
 
+// pgMap reads Postgres arrays through database/sql.
+var pgMap = pgtype.NewMap()
+
+// textArray scans a TEXT[] column into dst.
+func textArray(dst *[]string) sql.Scanner { return pgMap.SQLScanner(dst) }
+
 func scanTemplate(row interface{ Scan(...any) error }) (Template, error) {
 	var t Template
-	var topics pgtype.FlatArray[string]
+	var topics []string
 	var cat sql.NullString
-	err := row.Scan(&t.ID, &t.Slug, &t.Name, &t.DocClass, &topics, &t.Description, &t.BodyFileID, &t.Output, &t.AttorneyOnly, &cat, &t.Status, &t.CreatedAt, &t.UpdatedAt)
-	t.Topics = []string(topics)
+	err := row.Scan(&t.ID, &t.Slug, &t.Name, &t.DocClass, textArray(&topics), &t.Description, &t.BodyFileID, &t.Output, &t.AttorneyOnly, &cat, &t.Status, &t.CreatedAt, &t.UpdatedAt)
+	t.Topics = topics
 	if t.Topics == nil {
 		t.Topics = []string{}
 	}

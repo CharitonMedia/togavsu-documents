@@ -48,6 +48,9 @@ func (v viewer) firm() bool { return v.has("admin", "attorney", "staff") }
 
 func (v viewer) admin() bool { return v.has("admin") }
 
+// IsAdmin is admin() for page templates.
+func (v viewer) IsAdmin() bool { return v.admin() }
+
 // contextToken reads the frame's context token: the ?context= the core puts on every
 // frame, a form field, or the header an agent sends.
 func contextToken(r *http.Request) string {

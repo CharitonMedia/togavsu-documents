@@ -9,7 +9,7 @@
 <button>Search</button>
 </form>
 <p class="actions"><a href="{{link $c "/templates/new"}}">New template</a> <a href="{{link $c "/templates/new" "mode" "blank"}}">New blank template</a>
-{{if .Viewer.admin}} <a href="{{link $c "/attorneys"}}">Attorney profiles</a> <a href="{{link $c "/release"}}">Release trashed files</a>{{end}}</p>
+{{if .Viewer.IsAdmin}} <a href="{{link $c "/attorneys"}}">Attorney profiles</a> <a href="{{link $c "/release"}}">Release trashed files</a>{{end}}</p>
 
 <h2>Templates</h2>
 {{if not $d.Lib.Templates}}<p>No templates match.</p>{{else}}

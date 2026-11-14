@@ -610,13 +610,11 @@ func (s *Server) retryPDF(w http.ResponseWriter, r *http.Request, v viewer) {
 
 func (s *Server) run(ctx context.Context, id string) (Run, error) {
 	var run Run
-	var tmpl, pkg, report []byte
+	var report []byte
 	var manual []string
 	var tid, pid *string
 	err := s.c.DB.QueryRowContext(ctx, `SELECT id, matter_id, template_id, package_id, outcome, file_count, manual_tokens, error_report, started_at, finished_at FROM generation_runs WHERE id = $1`, id).
-		Scan(&run.ID, &run.MatterID, &tid, &pid, &run.Outcome, &run.FileCount, &manual, &report, &run.StartedAt, &run.FinishedAt)
-	_ = tmpl
-	_ = pkg
+		Scan(&run.ID, &run.MatterID, &tid, &pid, &run.Outcome, &run.FileCount, textArray(&manual), &report, &run.StartedAt, &run.FinishedAt)
 	if err != nil {
 		return run, notFound()
 	}
