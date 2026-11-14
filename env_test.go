@@ -60,11 +60,11 @@ type env struct {
 	now    time.Time
 
 	admin, attorney, staff, accountant, client, readonly *fakecore.User
-	family, estate                                      string
-	matter                                              *fakecore.Matter
-	avery, casey                                        *fakecore.Contact
-	clientParty, oppParty                               *fakecore.Party
-	county                                              string
+	family, estate                                       string
+	matter                                               *fakecore.Matter
+	avery, casey                                         *fakecore.Contact
+	clientParty, oppParty                                *fakecore.Party
+	county                                               string
 }
 
 func testURL(t *testing.T) string {

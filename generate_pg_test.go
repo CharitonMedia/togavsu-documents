@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/CharitonMedia/togavsu-documents/internal/fakecore"
 )
@@ -30,7 +31,7 @@ func TestPGDocumentsTokens(t *testing.T) {
 		"opposing_party_full_name": "Casey Example", "opposing_party_role": "Respondent",
 		"served_party_name": "Casey Example", "served_party_address": "5 Other St, Testville, TX 75002",
 		"firm_name": "Sample Law PLLC", "firm_address": "100 Main St, Testville, TX 75000", "firm_phone": "555-0100", "firm_email": "office@example.test",
-		"firm_website": "https://example.test",
+		"firm_website":  "https://example.test",
 		"attorney_name": "Jordan Q. Testlawyer", "attorney_last_name": "Testlawyer", "attorney_bar_number": "00001", "attorney_bar_state": "TX",
 		"attorney_signature_line": "/s/ Jordan Q. Testlawyer", "attorney_courtesy_name": "Ms. Testlawyer", "attorney_for_role": "Attorney for Petitioner",
 		"document_title": "Motion to withdraw", "today_long": "November 12, 2026", "filing_date_long": "3rd day of November, 2026",
@@ -49,9 +50,8 @@ func TestPGDocumentsTokens(t *testing.T) {
 	if res.CFKnown["matter_cf_old"] {
 		t.Error("a retired custom field counts as known")
 	}
-	// A clock just before midnight UTC is still the 12th in Chicago... and just after
-	// midnight UTC too.
-	e.now = fixedNow.Add(10 * 3600e9) // 01:00 UTC on the 13th, 7pm the 12th in Chicago
+	// 01:00 UTC on the 13th is still 7pm on the 12th in the firm's Chicago time zone.
+	e.now = fixedNow.Add(10 * time.Hour)
 	res, _ = e.srv.resolve(context.Background(), e.tok(e.attorney), resolveInput{MatterID: e.matter.ID})
 	if res.Values["today_long"].Value != "November 12, 2026" {
 		t.Errorf("today_long in the firm zone: %q", res.Values["today_long"].Value)
