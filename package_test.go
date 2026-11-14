@@ -129,4 +129,3 @@ func TestMigrationRules(t *testing.T) {
 		}
 	}
 }
-
