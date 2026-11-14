@@ -159,3 +159,15 @@ func (k *kit) current(fileID string) []byte {
 	}
 	return []byte(r.Body)
 }
+
+// zipOnly is a zip of the named parts and nothing else.
+func zipOnly(parts map[string]string) []byte {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for name, body := range parts {
+		w, _ := zw.Create(name)
+		_, _ = io.WriteString(w, body)
+	}
+	_ = zw.Close()
+	return buf.Bytes()
+}
