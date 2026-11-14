@@ -131,26 +131,17 @@ func pack(args []string) {
 // rest, archives and signs it. notes is one line per held-back part and one per pending
 // entry that held nothing back (its CORE item has landed, or the package lost the part).
 func build(priv ed25519.PrivateKey, files map[string][]byte) (signed []byte, notes []string, err error) {
-	signed, held, err := modulekit.BuildInstallable(priv, files)
+	signed, ip, err := modulekit.BuildInstallable(priv, files)
 	if err != nil {
 		return nil, nil, err
 	}
-	for _, h := range held {
+	for _, h := range ip.Held {
 		notes = append(notes, h.String())
 	}
-	for _, e := range unused(files, held) {
-		notes = append(notes, "pending "+e.Part()+" ("+e.Core+") holds nothing back: delete its entry in package/pending.yaml")
+	for _, e := range ip.Unused {
+		notes = append(notes, "pending "+e.Part()+" ("+e.Core.String()+") holds nothing back: delete its entry in package/pending.yaml")
 	}
 	return signed, notes, nil
-}
-
-// unused is the pending entries that held nothing back.
-func unused(files map[string][]byte, held []modulekit.Held) []modulekit.Pending {
-	entries, err := modulekit.ParsePending(files[modulekit.PendingFile])
-	if err != nil {
-		return nil
-	}
-	return modulekit.Unused(entries, held)
 }
 
 // writeFile writes b to a new or truncated file with the usual 0666-before-umask mode.

@@ -36,11 +36,11 @@ func files(t *testing.T) map[string][]byte {
 // holds back each part package/pending.yaml lists that the core refuses.
 func installable(t *testing.T) (map[string][]byte, []modulekit.Held) {
 	t.Helper()
-	out, held, err := modulekit.Installable(files(t))
+	ip, err := modulekit.Installable(files(t))
 	if err != nil {
 		t.Fatalf("package/pending.yaml doesn't cover every refusal of the pinned core: %v", err)
 	}
-	return out, held
+	return ip.Files, ip.Held
 }
 
 // The package passes the core's own install checks once the pending parts the core

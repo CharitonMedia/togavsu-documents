@@ -11,6 +11,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -154,7 +155,7 @@ func (k *kit) landed(item string) bool {
 		// them back.
 		_, held := installable(k.t)
 		for _, h := range held {
-			if h.Pending.Core == item {
+			if slices.Contains(h.Pending.Core, item) {
 				return false
 			}
 		}
@@ -199,11 +200,11 @@ func shipped(t *testing.T) map[string][]byte {
 // package/pending.yaml lists that the core refuses, and the parts it held back.
 func installable(t *testing.T) (map[string][]byte, []modulekit.Held) {
 	t.Helper()
-	out, held, err := modulekit.Installable(shipped(t))
+	ip, err := modulekit.Installable(shipped(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	return out, held
+	return ip.Files, ip.Held
 }
 
 // --- Calling the module as a viewer, through the core's /m/ route ---

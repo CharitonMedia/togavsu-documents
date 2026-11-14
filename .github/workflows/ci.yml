@@ -27,9 +27,10 @@ jobs:
       - name: Wait for Postgres
         run: until pg_isready -h 127.0.0.1 -p 5432 -U postgres; do sleep 1; done
       - run: go test -race ./...
-      # The kit's own check of the package as the pinned core installs it: the parts
-      # package/pending.yaml lists are held back while the core refuses them.
+      # The kit's own check of the package as the pinned core installs it and the
+      # marketplace checks it: the parts package/pending.yaml lists are held back while
+      # the core refuses them, and (-strict) an entry that holds nothing back fails.
       - name: Package check
-        run: go run github.com/CharitonMedia/togavsu/cmd/togavsu-module check -installable package
+        run: go run github.com/CharitonMedia/togavsu/cmd/togavsu-module check -installable -strict package
       - name: Docker build
         run: docker build -t togavsu-documents .
